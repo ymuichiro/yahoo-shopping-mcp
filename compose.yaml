@@ -1,0 +1,105 @@
+name: yahoo-shopping-mcp
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      YAHOO_SHOPPING_APP_ID: ${YAHOO_SHOPPING_APP_ID:?set YAHOO_SHOPPING_APP_ID in .env}
+      YAHOO_SHOPPING_MCP_HOST: 0.0.0.0
+      YAHOO_SHOPPING_MCP_PORT: "8000"
+      YAHOO_SHOPPING_MCP_DATA_DIR: /data
+      YAHOO_SHOPPING_MCP_GLOBAL_RATE_LIMIT: ${YAHOO_SHOPPING_MCP_GLOBAL_RATE_LIMIT:-60}
+      YAHOO_SHOPPING_MCP_GLOBAL_WINDOW_SECONDS: ${YAHOO_SHOPPING_MCP_GLOBAL_WINDOW_SECONDS:-60}
+      YAHOO_SHOPPING_MCP_ALLOWED_HOSTS: ${ALLOWED_HOSTS:-}
+      YAHOO_SHOPPING_MCP_ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+    expose:
+      - "8000"
+    volumes:
+      - app_data:/data
+    restart: unless-stopped
+    init: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 1.0
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - 'import socket,sys; s=socket.socket(); s.settimeout(3); s.connect(("127.0.0.1",8000)); s.close(); sys.exit(0)'
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - app_net
+      - egress_net
+
+  localproxy:
+    image: alpine/socat:1.8.0.3
+    depends_on:
+      app:
+        condition: service_healthy
+    command:
+      - TCP-LISTEN:8000,fork,reuseaddr
+      - TCP:app:8000
+    ports:
+      - "127.0.0.1:${APP_PORT:-18000}:8000"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 64m
+    cpus: 0.25
+    networks:
+      - app_net
+      - ingress_net
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.3.0@sha256:6b599ca3e974349ead3286d178da61d291961182ec3fe9c505e1dd02c8ac31b0
+    profiles:
+      - tunnel
+    depends_on:
+      app:
+        condition: service_healthy
+    command:
+      - tunnel
+      - --no-autoupdate
+      - run
+      - --token
+      - ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 128m
+    cpus: 0.5
+    networks:
+      - app_net
+      - egress_net
+
+networks:
+  app_net:
+    internal: true
+  ingress_net:
+  egress_net:
+
+volumes:
+  app_data:

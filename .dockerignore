@@ -1,0 +1,12 @@
+.git
+.github
+.pytest_cache
+.venv
+.local
+__pycache__
+*.pyc
+.env
+Dockerfile
+.dockerignore
+AGENTS.md
+tests
