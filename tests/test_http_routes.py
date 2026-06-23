@@ -106,6 +106,60 @@ async def test_streamable_http_tool_call_is_public(tmp_path) -> None:
 
 
 @pytest.mark.anyio
+async def test_streamable_http_allows_configured_cors_origin(tmp_path) -> None:
+    settings = Settings(
+        app_id="test-appid",
+        host="127.0.0.1",
+        port=8000,
+        state_dir=tmp_path / "state",
+        cache_dir=tmp_path / "cache",
+        allowed_hosts=["127.0.0.1:*"],
+        allowed_origins=["https://chatgpt.com"],
+    )
+    app = create_mcp_server(
+        settings,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(yahoo_handler)),
+    ).streamable_http_app()
+
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:8000") as client:
+            preflight = await client.options(
+                "/mcp",
+                headers={
+                    "Origin": "https://chatgpt.com",
+                    "Access-Control-Request-Method": "POST",
+                    "Access-Control-Request-Headers": "content-type,accept,mcp-session-id",
+                },
+            )
+            initialize = await client.post(
+                "/mcp",
+                headers={
+                    "Origin": "https://chatgpt.com",
+                    "Accept": "application/json, text/event-stream",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2025-03-26",
+                        "capabilities": {},
+                        "clientInfo": {"name": "cors-test", "version": "0.0.0"},
+                    },
+                },
+            )
+
+    assert preflight.status_code == 200
+    assert preflight.headers["access-control-allow-origin"] == "https://chatgpt.com"
+    assert "POST" in preflight.headers["access-control-allow-methods"]
+    assert initialize.status_code == 200
+    assert initialize.headers["access-control-allow-origin"] == "https://chatgpt.com"
+    assert initialize.headers["access-control-expose-headers"] == "mcp-session-id"
+
+
+@pytest.mark.anyio
 async def test_streamable_http_tool_call_works_with_internal_http_client(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,

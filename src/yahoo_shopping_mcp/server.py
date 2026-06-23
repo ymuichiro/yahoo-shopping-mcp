@@ -73,6 +73,28 @@ def _build_transport_security(settings: Settings) -> TransportSecuritySettings |
     )
 
 
+class YahooShoppingMCP(FastMCP):
+    def __init__(self, *args: Any, cors_allowed_origins: list[str] | None = None, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._cors_allowed_origins = cors_allowed_origins or []
+
+    def streamable_http_app(self):
+        app = super().streamable_http_app()
+        if not self._cors_allowed_origins:
+            return app
+
+        from starlette.middleware.cors import CORSMiddleware
+
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=self._cors_allowed_origins,
+            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+            allow_headers=["*"],
+            expose_headers=["mcp-session-id"],
+        )
+        return app
+
+
 def create_mcp_server(
     settings: Settings | None = None,
     *,
@@ -104,7 +126,7 @@ def create_mcp_server(
             if http_client is None:
                 await request_http_client.aclose()
 
-    mcp = FastMCP(
+    mcp = YahooShoppingMCP(
         "Yahoo Shopping MCP",
         json_response=True,
         host=resolved_settings.host,
@@ -112,6 +134,7 @@ def create_mcp_server(
         streamable_http_path="/mcp",
         lifespan=lifespan,
         transport_security=_build_transport_security(resolved_settings),
+        cors_allowed_origins=resolved_settings.allowed_origins,
     )
 
     @mcp.custom_route("/", methods=["GET"])

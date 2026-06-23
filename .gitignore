@@ -153,3 +153,6 @@ pyrightconfig.json
 
 # PyPI configuration file
 .pypirc
+
+# Serena
+.serena
