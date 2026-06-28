@@ -12,7 +12,12 @@ from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 from yahoo_shopping_mcp.config import Settings
-from yahoo_shopping_mcp.constants import GLOBAL_RATE_LIMIT_FILENAME, STATE_DB_FILENAME, USAGE_FILENAME
+from yahoo_shopping_mcp.constants import (
+    GLOBAL_RATE_LIMIT_FILENAME,
+    STATE_DB_FILENAME,
+    USAGE_FILENAME,
+    YAHOO_ITEM_SEARCH_URL,
+)
 from yahoo_shopping_mcp.errors import YahooShoppingError
 from yahoo_shopping_mcp.global_rate_limiter import GlobalRateLimitError, GlobalRateLimiter
 from yahoo_shopping_mcp.models import SearchProductsInput
@@ -65,6 +70,35 @@ def _global_rate_limit_worker(state_dir: str, limit: int, window_seconds: int, b
         queue.put(False)
     else:
         queue.put(True)
+
+
+def _yahoo_item_search_response() -> dict:
+    return {
+        "totalResultsAvailable": 2,
+        "totalResultsReturned": 2,
+        "firstResultsPosition": 1,
+        "hits": [
+            {
+                "name": "Desk Lamp",
+                "url": "https://example.com/desk-lamp",
+                "price": 3200,
+                "inStock": True,
+                "condition": "new",
+                "image": {"small": "https://example.com/s.jpg", "medium": "https://example.com/m.jpg"},
+                "review": {"rate": 4.5, "count": 12, "url": "https://example.com/review"},
+                "seller": {"name": "Store", "url": "https://example.com/store", "isBestSeller": True},
+                "description": "compact lamp",
+            },
+            {
+                "name": "Floor Lamp",
+                "url": "https://example.com/floor-lamp",
+                "price": 4980,
+                "inStock": False,
+                "image": {"small": "https://example.com/floor-s.jpg"},
+                "seller": {"name": "Interior Store"},
+            },
+        ],
+    }
 
 
 @pytest.mark.anyio
@@ -213,6 +247,11 @@ async def test_cache_hit_skips_upstream_and_marks_usage(tmp_path: Path) -> None:
     assert first["usage"]["from_cache"] is False
     assert second["usage"]["from_cache"] is True
     assert second["usage"]["count"] == 1
+    assert len(second["items"]) == 1
+    assert len(second["display_items"]) == 1
+    assert second["debug"]["cache_hit"] is True
+    assert second["debug"]["upstream_hits_count"] == 1
+    assert second["debug"]["formatted_items_count"] == 1
 
 
 @pytest.mark.anyio
@@ -246,6 +285,56 @@ async def test_cache_persists_only_yahoo_response_payload(tmp_path: Path) -> Non
     assert "applied_filters" not in cache_text
     assert '"usage"' not in cache_text
     assert cache_payload["totalResultsAvailable"] == 1
+
+
+@pytest.mark.anyio
+async def test_formats_display_items_and_debug_metadata(tmp_path: Path) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_yahoo_item_search_response())
+
+    client = build_client(tmp_path, handler, rate_seconds=0.0)
+    try:
+        result = await client.search(SearchProductsInput(query="lamp", shipping="free"))
+    finally:
+        await client._http_client.aclose()
+
+    assert result["display_summary"] == "lamp: 2 items returned"
+    assert result["display_items"][0]["title"] == "Desk Lamp"
+    assert result["display_items"][0]["price"] == 3200
+    assert result["display_items"][0]["price_text"] == "JPY 3,200"
+    assert result["display_items"][0]["seller_name"] == "Store"
+    assert result["display_items"][0]["product_url"] == "https://example.com/desk-lamp"
+    assert result["display_items"][0]["image_url"] == "https://example.com/m.jpg"
+    assert result["display_items"][0]["badges"] == ["In stock", "Free shipping"]
+    assert result["debug"]["upstream_url"] == YAHOO_ITEM_SEARCH_URL
+    assert result["debug"]["upstream_status"] == 200
+    assert "hits" in result["debug"]["upstream_keys"]
+    assert result["debug"]["upstream_hits_count"] == 2
+    assert result["debug"]["formatted_items_count"] == 2
+    assert result["debug"]["cache_hit"] is False
+    assert result["no_items_reason"] is None
+
+
+@pytest.mark.anyio
+async def test_empty_hits_explain_no_items_reason(tmp_path: Path) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"totalResultsAvailable": 0, "totalResultsReturned": 0, "firstResultsPosition": 1, "hits": []},
+        )
+
+    client = build_client(tmp_path, handler, rate_seconds=0.0)
+    try:
+        result = await client.search(SearchProductsInput(query="missing"))
+    finally:
+        await client._http_client.aclose()
+
+    assert result["items"] == []
+    assert result["display_items"] == []
+    assert result["display_summary"] == "missing: no items returned"
+    assert result["no_items_reason"] == "upstream_hits_empty"
+    assert result["debug"]["upstream_hits_count"] == 0
+    assert result["debug"]["formatted_items_count"] == 0
 
 
 @pytest.mark.anyio
@@ -496,8 +585,17 @@ async def test_streamable_http_tool_call_returns_structured_payload(tmp_path: Pa
                     await session.initialize()
                     result = await session.call_tool("search_products", {"query": "lamp"})
 
-    structured = result.structuredContent
-    assert structured["summary"]["total_results_available"] == 1
-    assert structured["items"][0]["name"] == "Desk Lamp"
-    assert structured["attribution"]["required_display"] is True
-    assert structured["usage"]["global_rate_limit"]["limit"] == settings.global_rate_limit
+    content_payload = json.loads(result.content[0].text)
+    content_text = result.content[0].text
+    assert result.structuredContent is None
+    assert content_text.lstrip().startswith('{\n  "results"')
+    assert content_payload["summary"]["total_results_available"] == 1
+    assert content_payload["results"][0]["title"] == "Desk Lamp"
+    assert content_payload["results"][0]["metadata"]["price"] == 3200
+    assert content_payload["results"][0]["metadata"]["seller_name"] == "Store"
+    assert content_payload["results"][0]["url"] == "https://example.com/desk-lamp"
+    assert content_payload["debug"]["upstream_url"] == YAHOO_ITEM_SEARCH_URL
+    assert content_payload["debug"]["upstream_hits_count"] == 1
+    assert content_payload["debug"]["formatted_items_count"] == 1
+    assert content_payload["debug"]["cache_hit"] is False
+    assert content_payload["attribution"]["required_display"] is True

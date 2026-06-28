@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 from mcp.client.session import ClientSession
@@ -102,7 +104,10 @@ async def test_streamable_http_tool_call_is_public(tmp_path) -> None:
                     result = await session.call_tool("search_products", {"query": "lamp"})
 
     assert result.isError is False
-    assert result.structuredContent["summary"]["total_results_available"] == 1
+    content_payload = json.loads(result.content[0].text)
+    assert result.structuredContent is None
+    assert content_payload["summary"]["total_results_available"] == 1
+    assert content_payload["no_items_reason"] == "upstream_hits_empty"
 
 
 @pytest.mark.anyio
@@ -203,7 +208,10 @@ async def test_streamable_http_tool_call_works_with_internal_http_client(
                     result = await session.call_tool("search_products", {"query": "lamp"})
 
     assert result.isError is False
-    assert result.structuredContent["items"][0]["name"] == "Desk Lamp"
+    content_payload = json.loads(result.content[0].text)
+    assert result.structuredContent is None
+    assert content_payload["results"][0]["title"] == "Desk Lamp"
+    assert content_payload["results"][0]["metadata"]["price"] == 3200
 
 
 @pytest.mark.anyio

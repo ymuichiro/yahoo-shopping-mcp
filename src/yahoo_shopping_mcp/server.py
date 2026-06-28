@@ -8,6 +8,7 @@ import httpx
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.types import CallToolResult, TextContent
 from pydantic import ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -70,6 +71,26 @@ def _build_transport_security(settings: Settings) -> TransportSecuritySettings |
         enable_dns_rebinding_protection=True,
         allowed_hosts=settings.allowed_hosts or [],
         allowed_origins=settings.allowed_origins or [],
+    )
+
+
+def _build_product_result_text(payload: dict[str, Any]) -> str:
+    model_visible_payload = {
+        "results": payload.get("results") or [],
+        "display_summary": payload.get("display_summary"),
+        "no_items_reason": payload.get("no_items_reason"),
+        "summary": payload.get("summary"),
+        "debug": payload.get("debug"),
+        "attribution": payload.get("attribution"),
+    }
+    return json.dumps(model_visible_payload, ensure_ascii=False, indent=2)
+
+
+def _build_tool_result(payload: dict[str, Any]) -> CallToolResult:
+    validated = SearchProductsResponse.model_validate(payload)
+    content_payload = validated.model_dump(mode="json")
+    return CallToolResult(
+        content=[TextContent(type="text", text=_build_product_result_text(content_payload))],
     )
 
 
@@ -145,7 +166,7 @@ def create_mcp_server(
     async def healthz(_request: Request):
         return JSONResponse({"ok": True})
 
-    @mcp.tool(structured_output=True)
+    @mcp.tool(structured_output=False)
     async def search_products(
         query: str | None = None,
         jan_code: str | None = None,
@@ -157,7 +178,7 @@ def create_mcp_server(
         sort: str | None = None,
         results: int = 20,
         start: int = 1,
-    ) -> SearchProductsResponse:
+    ) -> CallToolResult:
         """Search Yahoo! Shopping products with global rate limiting, retry, caching, and attribution metadata."""
 
         try:
@@ -179,7 +200,7 @@ def create_mcp_server(
             )
             response_payload = await _build_client(mcp).search(payload)
             response_payload["usage"]["global_rate_limit"] = rate_limit.model_dump()
-            return SearchProductsResponse.model_validate(response_payload)
+            return _build_tool_result(response_payload)
         except ValidationError as exc:
             first_error = exc.errors()[0]
             raise ToolError(

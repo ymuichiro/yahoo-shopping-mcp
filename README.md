@@ -95,6 +95,20 @@ http://127.0.0.1:8000/mcp
 - `window_seconds`
 - `reset_at`
 
+主な出力:
+
+ChatGPT 互換性のため、商品データは MCP tool result の `content[0].text` に JSON として返します。
+`structuredContent` / `outputSchema` だけに商品データを置くと、一部の MCP host では検索結果本文として認識されず、メタ情報だけが会話側に露出することがあります。
+そのため、このサーバーではモデルが読む本文として `content[0].text` を正とし、商品リストを先頭の `results` に置きます。
+
+- `results`: `id`, `title`, `url`, `text`, `metadata` を含む商品検索結果リスト
+- `display_summary`: MCP クライアントや LLM が読み取りやすい検索結果サマリー
+- `debug`: 上流 URL、HTTP status、上流キー、`hits` 件数、整形後件数、キャッシュヒット有無
+- `no_items_reason`: 商品がない場合の理由。例: `upstream_hits_empty`
+
+`results[*].metadata` には `price`, `price_text`, `seller_name`, `image_url`, `badges` が入ります。
+`debug` は原因切り分け用で、商品が見えない場合に上流 `hits` 件数、整形後件数、キャッシュヒット有無を確認するためのものです。
+
 ## 公開サーバー利用時の注意
 
 公開サーバーは「お試し用」「疎通確認用」と考えてください。

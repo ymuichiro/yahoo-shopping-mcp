@@ -166,6 +166,15 @@ class YahooShoppingClient:
         from_cache: bool,
     ) -> dict[str, Any]:
         hits = response_json.get("hits", [])
+        if not isinstance(hits, list):
+            hits = []
+        items = [self._format_item(hit) for hit in hits if isinstance(hit, dict)]
+        display_items = [self._format_display_item(item, request) for item in items]
+        results = [
+            self._format_search_result(item, display_item, index)
+            for index, (item, display_item) in enumerate(zip(items, display_items, strict=False), start=1)
+        ]
+        no_items_reason = self._build_no_items_reason(hits, items)
         warnings: list[dict[str, Any]] = []
         if usage_state.count >= self._warning_threshold:
             warnings.append(
@@ -176,12 +185,24 @@ class YahooShoppingClient:
             )
 
         return {
+            "results": results,
+            "display_summary": self._build_display_summary(request, display_items),
+            "display_items": display_items,
+            "no_items_reason": no_items_reason,
+            "debug": {
+                "upstream_url": YAHOO_ITEM_SEARCH_URL,
+                "upstream_status": 200,
+                "upstream_keys": list(response_json.keys()),
+                "upstream_hits_count": len(hits),
+                "formatted_items_count": len(items),
+                "cache_hit": from_cache,
+            },
             "summary": {
                 "total_results_available": response_json.get("totalResultsAvailable", 0),
                 "total_results_returned": response_json.get("totalResultsReturned", len(hits)),
                 "first_results_position": response_json.get("firstResultsPosition", request.start),
             },
-            "items": [self._format_item(hit) for hit in hits],
+            "items": items,
             "pagination": {
                 "start": request.start,
                 "results": request.results,
@@ -225,6 +246,86 @@ class YahooShoppingClient:
             },
             "description": hit.get("description"),
         }
+
+    @staticmethod
+    def _format_search_result(
+        item: dict[str, Any],
+        display_item: dict[str, Any],
+        index: int,
+    ) -> dict[str, Any]:
+        title = display_item.get("title") or item.get("name") or f"Product {index}"
+        url = display_item.get("product_url") or item.get("url") or ""
+        price_text = display_item.get("price_text") or str(display_item.get("price") or "")
+        seller_name = display_item.get("seller_name") or ""
+        text_parts = [
+            f"price: {price_text}" if price_text else None,
+            f"seller: {seller_name}" if seller_name else None,
+            "in stock" if item.get("in_stock") is True else None,
+            item.get("description"),
+        ]
+        text = " | ".join(str(part) for part in text_parts if part)
+
+        return {
+            "id": url or f"product-{index}",
+            "title": str(title),
+            "url": str(url),
+            "text": text,
+            "metadata": {
+                "price": display_item.get("price"),
+                "price_text": display_item.get("price_text"),
+                "seller_name": display_item.get("seller_name"),
+                "image_url": display_item.get("image_url"),
+                "badges": display_item.get("badges") or [],
+            },
+        }
+
+    @staticmethod
+    def _format_display_item(item: dict[str, Any], request: SearchProductsInput) -> dict[str, Any]:
+        image = item.get("image") or {}
+        seller = item.get("seller") or {}
+        badges = []
+        if item.get("in_stock") is True:
+            badges.append("In stock")
+        if request.shipping and "free" in request.shipping:
+            badges.append("Free shipping")
+
+        return {
+            "title": item.get("name"),
+            "price": item.get("price"),
+            "price_text": YahooShoppingClient._format_price_text(item.get("price")),
+            "seller_name": seller.get("name"),
+            "product_url": item.get("url"),
+            "image_url": image.get("medium") or image.get("small"),
+            "badges": badges,
+        }
+
+    @staticmethod
+    def _format_price_text(price: Any) -> str | None:
+        if price is None:
+            return None
+        if isinstance(price, int):
+            return f"JPY {price:,}"
+        if isinstance(price, float):
+            if price.is_integer():
+                return f"JPY {int(price):,}"
+            return f"JPY {price:,.2f}"
+        return str(price)
+
+    @staticmethod
+    def _build_display_summary(request: SearchProductsInput, display_items: list[dict[str, Any]]) -> str:
+        search_term = request.query or request.jan_code or "search"
+        count = len(display_items)
+        if count == 0:
+            return f"{search_term}: no items returned"
+        return f"{search_term}: {count} item{'s' if count != 1 else ''} returned"
+
+    @staticmethod
+    def _build_no_items_reason(hits: list[Any], items: list[dict[str, Any]]) -> str | None:
+        if not hits:
+            return "upstream_hits_empty"
+        if not items:
+            return "formatted_items_empty"
+        return None
 
     def _build_http_error(self, response: httpx.Response) -> YahooShoppingError:
         provider_code = None

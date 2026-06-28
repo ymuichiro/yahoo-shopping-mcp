@@ -90,6 +90,24 @@ class ItemPayload(BaseModel):
     description: str | None = None
 
 
+class DisplayItemPayload(BaseModel):
+    title: str | None = None
+    price: int | float | None = None
+    price_text: str | None = None
+    seller_name: str | None = None
+    product_url: str | None = None
+    image_url: str | None = None
+    badges: list[str] = Field(default_factory=list)
+
+
+class SearchResultPayload(BaseModel):
+    id: str
+    title: str
+    url: str
+    text: str
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+
 class PaginationPayload(BaseModel):
     start: int
     results: int
@@ -122,7 +140,21 @@ class GlobalRateLimitPayload(BaseModel):
     reset_at: int
 
 
+class DebugPayload(BaseModel):
+    upstream_url: str
+    upstream_status: int | None = None
+    upstream_keys: list[str]
+    upstream_hits_count: int
+    formatted_items_count: int
+    cache_hit: bool
+
+
 class SearchProductsResponse(BaseModel):
+    results: list[SearchResultPayload]
+    display_summary: str
+    display_items: list[DisplayItemPayload]
+    no_items_reason: str | None = None
+    debug: DebugPayload
     summary: SummaryPayload
     items: list[ItemPayload]
     pagination: PaginationPayload
