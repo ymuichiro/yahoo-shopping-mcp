@@ -20,11 +20,9 @@ from yahoo_shopping_mcp.constants import (
     YAHOO_ITEM_SEARCH_URL,
 )
 from yahoo_shopping_mcp.errors import YahooShoppingError
-from yahoo_shopping_mcp.global_rate_limiter import GlobalRateLimitError, GlobalRateLimiter
 from yahoo_shopping_mcp.models import SearchProductsInput
-from yahoo_shopping_mcp.rate_limiter import SerialRateLimiter
 from yahoo_shopping_mcp.server import create_mcp_server
-from yahoo_shopping_mcp.storage import CacheStore, UsageStore
+from yahoo_shopping_mcp.storage import CacheStore, SQLiteStateStore, StoredRateLimitExceededError, current_jst_date
 from yahoo_shopping_mcp.yahoo_api import YahooShoppingClient
 
 
@@ -41,8 +39,8 @@ def build_client(
     return YahooShoppingClient(
         app_id="test-appid",
         http_client=http_client,
-        rate_limiter=SerialRateLimiter(rate_seconds),
-        usage_store=UsageStore(tmp_path / "state"),
+        min_interval_seconds=rate_seconds,
+        state_store=SQLiteStateStore(tmp_path / "state"),
         cache_store=CacheStore(tmp_path / "cache", ttl_seconds=300),
         warning_threshold=warning_threshold,
         hard_limit=hard_limit,
@@ -57,17 +55,17 @@ def _process_context():
 
 
 def _usage_increment_worker(state_dir: str, barrier, queue) -> None:
-    store = UsageStore(Path(state_dir))
+    store = SQLiteStateStore(Path(state_dir))
     barrier.wait()
-    queue.put(store.increment().count)
+    queue.put(store.increment_usage().count)
 
 
 def _global_rate_limit_worker(state_dir: str, limit: int, window_seconds: int, barrier, queue) -> None:
-    limiter = GlobalRateLimiter(Path(state_dir), limit=limit, window_seconds=window_seconds)
+    store = SQLiteStateStore(Path(state_dir))
     barrier.wait()
     try:
-        limiter.consume()
-    except GlobalRateLimitError:
+        store.consume_global_rate_limit(key="global", limit=limit, window_seconds=window_seconds, now=int(time.time()))
+    except Exception:
         queue.put(False)
     else:
         queue.put(True)
@@ -334,15 +332,15 @@ async def test_daily_limit_warning(tmp_path: Path) -> None:
             json={"totalResultsAvailable": 1, "totalResultsReturned": 0, "firstResultsPosition": 1, "hits": []},
         )
 
-    usage_store = UsageStore(tmp_path / "state")
-    usage_store.save(usage_store.load().model_copy(update={"count": 44_999}))
+    state_store = SQLiteStateStore(tmp_path / "state")
+    state_store.save_usage(state_store.load_usage().model_copy(update={"count": 44_999}))
     transport = httpx.MockTransport(handler)
     http_client = httpx.AsyncClient(transport=transport)
     client = YahooShoppingClient(
         app_id="test-appid",
         http_client=http_client,
-        rate_limiter=SerialRateLimiter(0.0),
-        usage_store=usage_store,
+        min_interval_seconds=0.0,
+        state_store=state_store,
         cache_store=CacheStore(tmp_path / "cache", ttl_seconds=300),
         warning_threshold=45_000,
         hard_limit=50_000,
@@ -362,15 +360,15 @@ async def test_daily_limit_stop(tmp_path: Path) -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={})
 
-    usage_store = UsageStore(tmp_path / "state")
-    usage_store.save(usage_store.load().model_copy(update={"count": 50_000}))
+    state_store = SQLiteStateStore(tmp_path / "state")
+    state_store.save_usage(state_store.load_usage().model_copy(update={"count": 50_000}))
     transport = httpx.MockTransport(handler)
     http_client = httpx.AsyncClient(transport=transport)
     client = YahooShoppingClient(
         app_id="test-appid",
         http_client=http_client,
-        rate_limiter=SerialRateLimiter(0.0),
-        usage_store=usage_store,
+        min_interval_seconds=0.0,
+        state_store=state_store,
         cache_store=CacheStore(tmp_path / "cache", ttl_seconds=300),
         warning_threshold=45_000,
         hard_limit=50_000,
@@ -533,8 +531,8 @@ async def test_cache_expiry_triggers_refetch(tmp_path: Path, monkeypatch: pytest
     client = YahooShoppingClient(
         app_id="test-appid",
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
-        rate_limiter=SerialRateLimiter(0.0),
-        usage_store=UsageStore(tmp_path / "state"),
+        min_interval_seconds=0.0,
+        state_store=SQLiteStateStore(tmp_path / "state"),
         cache_store=CacheStore(tmp_path / "cache", ttl_seconds=1),
         warning_threshold=45_000,
         hard_limit=50_000,
@@ -598,8 +596,8 @@ async def test_parallel_identical_queries_share_single_upstream_call(tmp_path: P
     client = YahooShoppingClient(
         app_id="test-appid",
         http_client=http_client,
-        rate_limiter=SerialRateLimiter(0.0),
-        usage_store=UsageStore(tmp_path / "state"),
+        min_interval_seconds=0.0,
+        state_store=SQLiteStateStore(tmp_path / "state"),
         cache_store=CacheStore(tmp_path / "cache", ttl_seconds=300),
         warning_threshold=45_000,
         hard_limit=50_000,
@@ -612,7 +610,7 @@ async def test_parallel_identical_queries_share_single_upstream_call(tmp_path: P
         await http_client.aclose()
 
     assert calls["count"] == 1
-    assert UsageStore(tmp_path / "state").load().count == 1
+    assert SQLiteStateStore(tmp_path / "state").load_usage().count == 1
     assert sorted([first["usage"]["from_cache"], second["usage"]["from_cache"]]) == [False, True]
 
 
@@ -627,14 +625,14 @@ async def test_parallel_calls_respect_daily_limit(tmp_path: Path) -> None:
             json={"totalResultsAvailable": 1, "totalResultsReturned": 1, "firstResultsPosition": 1, "hits": []},
         )
 
-    usage_store = UsageStore(tmp_path / "state")
-    usage_store.save(usage_store.load().model_copy(update={"count": 49_999}))
+    state_store = SQLiteStateStore(tmp_path / "state")
+    state_store.save_usage(state_store.load_usage().model_copy(update={"count": 49_999}))
     http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     client = YahooShoppingClient(
         app_id="test-appid",
         http_client=http_client,
-        rate_limiter=SerialRateLimiter(0.0),
-        usage_store=usage_store,
+        min_interval_seconds=0.0,
+        state_store=state_store,
         cache_store=CacheStore(tmp_path / "cache", ttl_seconds=300),
         warning_threshold=45_000,
         hard_limit=50_000,
@@ -652,18 +650,15 @@ async def test_parallel_calls_respect_daily_limit(tmp_path: Path) -> None:
     assert calls["count"] == 1
     assert sum(isinstance(result, YahooShoppingError) for result in (first, second)) == 1
     assert sum(isinstance(result, dict) for result in (first, second)) == 1
-    assert UsageStore(tmp_path / "state").load().count == 50_000
+    assert SQLiteStateStore(tmp_path / "state").load_usage().count == 50_000
 
 
-def test_usage_store_migrates_legacy_json_and_preserves_parallel_increments(tmp_path: Path) -> None:
+def test_usage_state_migrates_legacy_json_and_preserves_parallel_increments(tmp_path: Path) -> None:
     state_dir = tmp_path / "state"
     state_dir.mkdir(parents=True)
-    (state_dir / USAGE_FILENAME).write_text(
-        json.dumps({"date": UsageStore.current_jst_date(), "count": 3}),
-        encoding="utf-8",
-    )
+    (state_dir / USAGE_FILENAME).write_text(json.dumps({"date": current_jst_date(), "count": 3}), encoding="utf-8")
 
-    assert UsageStore(state_dir).load().count == 3
+    assert SQLiteStateStore(state_dir).load_usage().count == 3
     assert (state_dir / STATE_DB_FILENAME).exists()
 
     ctx = _process_context()
@@ -682,10 +677,10 @@ def test_usage_store_migrates_legacy_json_and_preserves_parallel_increments(tmp_
         assert worker.exitcode == 0
 
     assert sorted(values) == list(range(4, 14))
-    assert UsageStore(state_dir).load().count == 13
+    assert SQLiteStateStore(state_dir).load_usage().count == 13
 
 
-def test_global_rate_limiter_migrates_legacy_json_and_enforces_limit_under_concurrency(tmp_path: Path) -> None:
+def test_global_rate_limit_state_migrates_legacy_json_and_enforces_limit_under_concurrency(tmp_path: Path) -> None:
     state_dir = tmp_path / "state"
     state_dir.mkdir(parents=True)
     (state_dir / GLOBAL_RATE_LIMIT_FILENAME).write_text(
@@ -694,9 +689,9 @@ def test_global_rate_limiter_migrates_legacy_json_and_enforces_limit_under_concu
     )
 
     assert (state_dir / STATE_DB_FILENAME).exists() is False
-    limiter = GlobalRateLimiter(state_dir, limit=5, window_seconds=60)
+    store = SQLiteStateStore(state_dir)
     assert (state_dir / STATE_DB_FILENAME).exists() is True
-    assert limiter.consume().remaining == 4
+    assert store.consume_global_rate_limit(key="global", limit=5, window_seconds=60, now=int(time.time())).remaining == 4
 
     ctx = _process_context()
     worker_count = 10
@@ -715,8 +710,8 @@ def test_global_rate_limiter_migrates_legacy_json_and_enforces_limit_under_concu
 
     assert results.count(True) == 4
     assert results.count(False) == 6
-    with pytest.raises(GlobalRateLimitError):
-        limiter.consume()
+    with pytest.raises(StoredRateLimitExceededError):
+        store.consume_global_rate_limit(key="global", limit=5, window_seconds=60, now=int(time.time()))
 
 
 @pytest.mark.anyio

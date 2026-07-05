@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 import json
 import logging
+import time
 from typing import Annotated, Any
 
 import httpx
@@ -16,10 +17,8 @@ from starlette.responses import JSONResponse
 
 from yahoo_shopping_mcp.config import Settings, load_settings
 from yahoo_shopping_mcp.errors import YahooShoppingError
-from yahoo_shopping_mcp.global_rate_limiter import GlobalRateLimitError, GlobalRateLimiter
 from yahoo_shopping_mcp.models import SearchProductsInput, SearchProductsResponse
-from yahoo_shopping_mcp.rate_limiter import SerialRateLimiter
-from yahoo_shopping_mcp.storage import CacheStore, UsageStore, ensure_dir
+from yahoo_shopping_mcp.storage import CacheStore, SQLiteStateStore, StoredRateLimitExceededError, ensure_dir
 from yahoo_shopping_mcp.yahoo_api import RequestCoalescer, YahooShoppingClient
 
 
@@ -49,15 +48,14 @@ def _build_client(mcp: FastMCP) -> YahooShoppingClient:
     context = mcp.get_context()
     settings: Settings = context.request_context.lifespan_context["settings"]
     http_client: httpx.AsyncClient = context.request_context.lifespan_context["http_client"]
-    rate_limiter: SerialRateLimiter = context.request_context.lifespan_context["rate_limiter"]
-    usage_store: UsageStore = context.request_context.lifespan_context["usage_store"]
+    state_store: SQLiteStateStore = context.request_context.lifespan_context["state_store"]
     cache_store: CacheStore = context.request_context.lifespan_context["cache_store"]
     request_coalescer: RequestCoalescer = context.request_context.lifespan_context["request_coalescer"]
     return YahooShoppingClient(
         app_id=settings.app_id,
         http_client=http_client,
-        rate_limiter=rate_limiter,
-        usage_store=usage_store,
+        min_interval_seconds=settings.base_rate_seconds,
+        state_store=state_store,
         cache_store=cache_store,
         warning_threshold=settings.warning_threshold,
         hard_limit=settings.hard_limit,
@@ -100,30 +98,6 @@ def _build_tool_result(payload: dict[str, Any]) -> CallToolResult:
         content=[TextContent(type="text", text=_build_product_result_text(content_payload))],
         structuredContent=content_payload,
     )
-
-
-class YahooShoppingMCP(FastMCP):
-    def __init__(self, *args: Any, cors_allowed_origins: list[str] | None = None, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._cors_allowed_origins = cors_allowed_origins or []
-
-    def streamable_http_app(self):
-        app = super().streamable_http_app()
-        if not self._cors_allowed_origins:
-            return app
-
-        from starlette.middleware.cors import CORSMiddleware
-
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=self._cors_allowed_origins,
-            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-            allow_headers=["*"],
-            expose_headers=["mcp-session-id"],
-        )
-        return app
-
-
 def create_mcp_server(
     settings: Settings | None = None,
     *,
@@ -138,25 +112,19 @@ def create_mcp_server(
         ensure_dir(resolved_settings.cache_dir)
         request_http_client = http_client or httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0))
         try:
-            global_rate_limiter = GlobalRateLimiter(
-                resolved_settings.state_dir,
-                limit=resolved_settings.global_rate_limit,
-                window_seconds=resolved_settings.global_window_seconds,
-            )
+            state_store = SQLiteStateStore(resolved_settings.state_dir)
             yield {
                 "settings": resolved_settings,
                 "http_client": request_http_client,
-                "rate_limiter": SerialRateLimiter(resolved_settings.base_rate_seconds),
-                "usage_store": UsageStore(resolved_settings.state_dir),
+                "state_store": state_store,
                 "cache_store": CacheStore(resolved_settings.cache_dir, resolved_settings.cache_ttl_seconds),
                 "request_coalescer": RequestCoalescer(),
-                "global_rate_limiter": global_rate_limiter,
             }
         finally:
             if http_client is None:
                 await request_http_client.aclose()
 
-    mcp = YahooShoppingMCP(
+    mcp = FastMCP(
         "Yahoo Shopping MCP",
         json_response=True,
         host=resolved_settings.host,
@@ -164,8 +132,25 @@ def create_mcp_server(
         streamable_http_path="/mcp",
         lifespan=lifespan,
         transport_security=_build_transport_security(resolved_settings),
-        cors_allowed_origins=resolved_settings.allowed_origins,
     )
+
+    if resolved_settings.allowed_origins:
+        original_streamable_http_app = mcp.streamable_http_app
+
+        def streamable_http_app():
+            app = original_streamable_http_app()
+            from starlette.middleware.cors import CORSMiddleware
+
+            app.add_middleware(
+                CORSMiddleware,
+                allow_origins=resolved_settings.allowed_origins or [],
+                allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+                allow_headers=["*"],
+                expose_headers=["mcp-session-id"],
+            )
+            return app
+
+        mcp.streamable_http_app = streamable_http_app  # type: ignore[assignment]
 
     @mcp.custom_route("/", methods=["GET"])
     async def root(_request: Request):
@@ -191,10 +176,13 @@ def create_mcp_server(
         """Search Yahoo! Shopping products with global rate limiting, retry, caching, and attribution metadata."""
 
         try:
-            global_rate_limiter: GlobalRateLimiter = mcp.get_context().request_context.lifespan_context[
-                "global_rate_limiter"
-            ]
-            rate_limit = global_rate_limiter.consume()
+            state_store: SQLiteStateStore = mcp.get_context().request_context.lifespan_context["state_store"]
+            rate_limit = state_store.consume_global_rate_limit(
+                key="global",
+                limit=resolved_settings.global_rate_limit,
+                window_seconds=resolved_settings.global_window_seconds,
+                now=int(time.time()),
+            )
             payload = SearchProductsInput(
                 query=query,
                 jan_code=jan_code,
@@ -220,11 +208,11 @@ def create_mcp_server(
                     details={"errors": exc.errors()},
                 )
             ) from exc
-        except GlobalRateLimitError as exc:
+        except StoredRateLimitExceededError as exc:
             raise ToolError(
                 _error_payload(
                     kind="global_rate_limited",
-                    message=str(exc),
+                    message=f"Global rate limit exceeded. Retry after {exc.retry_after} seconds.",
                     retryable=True,
                     http_status=429,
                 )

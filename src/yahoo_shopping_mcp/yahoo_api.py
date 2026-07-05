@@ -5,7 +5,7 @@ import json
 import logging
 import random
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, TypeVar
 
 import httpx
 
@@ -16,12 +16,12 @@ from yahoo_shopping_mcp.constants import (
 )
 from yahoo_shopping_mcp.errors import YahooShoppingError
 from yahoo_shopping_mcp.models import SearchProductsInput, UsageState
-from yahoo_shopping_mcp.rate_limiter import SerialRateLimiter
-from yahoo_shopping_mcp.storage import CacheStore, UsageStore
+from yahoo_shopping_mcp.storage import CacheStore, SQLiteStateStore
 
 logger = logging.getLogger(__name__)
 REDACTED_VALUE = "[REDACTED]"
 SENSITIVE_REQUEST_KEYS = {"appid", "api_key", "access_token", "authorization", "token"}
+T = TypeVar("T")
 
 
 class RequestCoalescer:
@@ -53,8 +53,8 @@ class YahooShoppingClient:
         self,
         app_id: str,
         http_client: httpx.AsyncClient,
-        rate_limiter: SerialRateLimiter,
-        usage_store: UsageStore,
+        min_interval_seconds: float,
+        state_store: SQLiteStateStore,
         cache_store: CacheStore,
         warning_threshold: int,
         hard_limit: int,
@@ -62,8 +62,10 @@ class YahooShoppingClient:
     ) -> None:
         self._app_id = app_id
         self._http_client = http_client
-        self._rate_limiter = rate_limiter
-        self._usage_store = usage_store
+        self._min_interval_seconds = min_interval_seconds
+        self._rate_lock = asyncio.Lock()
+        self._last_started_at = 0.0
+        self._state_store = state_store
         self._cache_store = cache_store
         self._warning_threshold = warning_threshold
         self._hard_limit = hard_limit
@@ -94,18 +96,27 @@ class YahooShoppingClient:
         return self._build_cached_response(request, cached_response)
 
     def _build_cached_response(self, request: SearchProductsInput, response_json: dict[str, Any]) -> dict[str, Any]:
-        return self._format_response(request, response_json, self._usage_store.load(), from_cache=True)
+        return self._format_response(request, response_json, self._state_store.load_usage(), from_cache=True)
 
     async def _fetch_uncached(self, request: SearchProductsInput, cache_key_payload: dict[str, object]) -> dict[str, Any]:
-        response_json, usage_state = await self._rate_limiter.run(lambda: self._fetch_with_usage_accounting(request))
+        response_json, usage_state = await self._run_with_rate_limit(lambda: self._fetch_with_usage_accounting(request))
         self._cache_store.set(cache_key_payload, response_json)
         return self._format_response(request, response_json, usage_state, from_cache=False)
+
+    async def _run_with_rate_limit(self, operation: Callable[[], Awaitable[T]]) -> T:
+        async with self._rate_lock:
+            now = asyncio.get_running_loop().time()
+            elapsed = now - self._last_started_at
+            if self._last_started_at and elapsed < self._min_interval_seconds:
+                await asyncio.sleep(self._min_interval_seconds - elapsed)
+            self._last_started_at = asyncio.get_running_loop().time()
+            return await operation()
 
     async def _fetch_with_usage_accounting(
         self,
         request: SearchProductsInput,
     ) -> tuple[dict[str, Any], UsageState]:
-        usage_state = self._usage_store.load()
+        usage_state = self._state_store.load_usage()
         if usage_state.count >= self._hard_limit:
             raise YahooShoppingError(
                 kind="daily_limit_exceeded",
@@ -113,7 +124,7 @@ class YahooShoppingClient:
                 retryable=False,
             )
         response_json = await self._fetch_with_retry(request)
-        usage_state = self._usage_store.increment()
+        usage_state = self._state_store.increment_usage()
         return response_json, usage_state
 
     async def _fetch_with_retry(self, request: SearchProductsInput) -> dict[str, Any]:

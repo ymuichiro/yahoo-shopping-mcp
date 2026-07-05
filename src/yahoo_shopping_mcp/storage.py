@@ -212,24 +212,6 @@ class SQLiteStateStore:
         return state
 
 
-class UsageStore:
-    def __init__(self, state_dir: Path) -> None:
-        self._state_store = SQLiteStateStore(state_dir)
-
-    def load(self, today: str | None = None) -> UsageState:
-        return self._state_store.load_usage(today)
-
-    def save(self, state: UsageState) -> None:
-        self._state_store.save_usage(state)
-
-    def increment(self) -> UsageState:
-        return self._state_store.increment_usage()
-
-    @staticmethod
-    def current_jst_date() -> str:
-        return current_jst_date()
-
-
 class CacheStore:
     def __init__(self, cache_dir: Path, ttl_seconds: int) -> None:
         self._cache_dir = cache_dir
