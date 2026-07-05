@@ -201,10 +201,9 @@ class YahooShoppingClient:
         if not isinstance(hits, list):
             hits = []
         items = [self._format_item(hit) for hit in hits if isinstance(hit, dict)]
-        display_items = [self._format_display_item(item, request) for item in items]
         results = [
-            self._format_search_result(item, display_item, index)
-            for index, (item, display_item) in enumerate(zip(items, display_items, strict=False), start=1)
+            self._format_search_result(item, request, index)
+            for index, item in enumerate(items, start=1)
         ]
         no_items_reason = self._build_no_items_reason(hits, items)
         warnings: list[dict[str, Any]] = []
@@ -218,8 +217,7 @@ class YahooShoppingClient:
 
         return {
             "results": results,
-            "display_summary": self._build_display_summary(request, display_items),
-            "display_items": display_items,
+            "display_summary": self._build_display_summary(request, items),
             "no_items_reason": no_items_reason,
             "debug": {
                 "upstream_url": YAHOO_ITEM_SEARCH_URL,
@@ -368,15 +366,18 @@ class YahooShoppingClient:
         return formatted_items
 
     @staticmethod
-    def _format_search_result(
-        item: dict[str, Any],
-        display_item: dict[str, Any],
-        index: int,
-    ) -> dict[str, Any]:
-        title = display_item.get("title") or item.get("name") or f"Product {index}"
-        url = display_item.get("product_url") or item.get("url") or ""
-        price_text = display_item.get("price_text") or str(display_item.get("price") or "")
-        seller_name = display_item.get("seller_name") or ""
+    def _format_search_result(item: dict[str, Any], request: SearchProductsInput, index: int) -> dict[str, Any]:
+        image = item.get("image") or {}
+        seller = item.get("seller") or {}
+        title = item.get("name") or f"Product {index}"
+        url = item.get("url") or ""
+        price_text = YahooShoppingClient._format_price_text(item.get("price")) or ""
+        seller_name = seller.get("name") or ""
+        badges = []
+        if item.get("in_stock") is True:
+            badges.append("In stock")
+        if request.shipping and "free" in request.shipping:
+            badges.append("Free shipping")
         text_parts = [
             f"price: {price_text}" if price_text else None,
             f"seller: {seller_name}" if seller_name else None,
@@ -391,32 +392,12 @@ class YahooShoppingClient:
             "url": str(url),
             "text": text,
             "metadata": {
-                "price": display_item.get("price"),
-                "price_text": display_item.get("price_text"),
-                "seller_name": display_item.get("seller_name"),
-                "image_url": display_item.get("image_url"),
-                "badges": display_item.get("badges") or [],
+                "price": item.get("price"),
+                "price_text": price_text or None,
+                "seller_name": seller_name,
+                "image_url": image.get("medium") or image.get("small"),
+                "badges": badges,
             },
-        }
-
-    @staticmethod
-    def _format_display_item(item: dict[str, Any], request: SearchProductsInput) -> dict[str, Any]:
-        image = item.get("image") or {}
-        seller = item.get("seller") or {}
-        badges = []
-        if item.get("in_stock") is True:
-            badges.append("In stock")
-        if request.shipping and "free" in request.shipping:
-            badges.append("Free shipping")
-
-        return {
-            "title": item.get("name"),
-            "price": item.get("price"),
-            "price_text": YahooShoppingClient._format_price_text(item.get("price")),
-            "seller_name": seller.get("name"),
-            "product_url": item.get("url"),
-            "image_url": image.get("medium") or image.get("small"),
-            "badges": badges,
         }
 
     @staticmethod
@@ -432,9 +413,9 @@ class YahooShoppingClient:
         return str(price)
 
     @staticmethod
-    def _build_display_summary(request: SearchProductsInput, display_items: list[dict[str, Any]]) -> str:
+    def _build_display_summary(request: SearchProductsInput, items: list[dict[str, Any]]) -> str:
         search_term = request.query or request.jan_code or "search"
-        count = len(display_items)
+        count = len(items)
         if count == 0:
             return f"{search_term}: no items returned"
         return f"{search_term}: {count} item{'s' if count != 1 else ''} returned"

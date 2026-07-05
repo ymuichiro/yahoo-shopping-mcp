@@ -415,7 +415,7 @@ async def test_cache_hit_skips_upstream_and_marks_usage(tmp_path: Path) -> None:
     assert second["usage"]["from_cache"] is True
     assert second["usage"]["count"] == 1
     assert len(second["items"]) == 1
-    assert len(second["display_items"]) == 1
+    assert len(second["results"]) == 1
     assert second["debug"]["cache_hit"] is True
     assert second["debug"]["upstream_hits_count"] == 1
     assert second["debug"]["formatted_items_count"] == 1
@@ -455,7 +455,7 @@ async def test_cache_persists_only_yahoo_response_payload(tmp_path: Path) -> Non
 
 
 @pytest.mark.anyio
-async def test_formats_display_items_and_debug_metadata(tmp_path: Path) -> None:
+async def test_formats_results_and_debug_metadata(tmp_path: Path) -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=_yahoo_item_search_response())
 
@@ -466,13 +466,12 @@ async def test_formats_display_items_and_debug_metadata(tmp_path: Path) -> None:
         await client._http_client.aclose()
 
     assert result["display_summary"] == "lamp: 2 items returned"
-    assert result["display_items"][0]["title"] == "Desk Lamp"
-    assert result["display_items"][0]["price"] == 3200
-    assert result["display_items"][0]["price_text"] == "JPY 3,200"
-    assert result["display_items"][0]["seller_name"] == "Store"
-    assert result["display_items"][0]["product_url"] == "https://example.com/desk-lamp"
-    assert result["display_items"][0]["image_url"] == "https://example.com/m.jpg"
-    assert result["display_items"][0]["badges"] == ["In stock", "Free shipping"]
+    assert result["results"][0]["title"] == "Desk Lamp"
+    assert result["results"][0]["metadata"]["price"] == 3200
+    assert result["results"][0]["metadata"]["price_text"] == "JPY 3,200"
+    assert result["results"][0]["metadata"]["seller_name"] == "Store"
+    assert result["results"][0]["metadata"]["image_url"] == "https://example.com/m.jpg"
+    assert result["results"][0]["metadata"]["badges"] == ["In stock", "Free shipping"]
     assert result["items"][0]["code"] == "store_desk-lamp"
     assert result["items"][0]["headline"] == "Bright compact lamp"
     assert result["items"][0]["price_label"]["default_price"] == 3980
@@ -512,8 +511,8 @@ async def test_empty_hits_explain_no_items_reason(tmp_path: Path) -> None:
     finally:
         await client._http_client.aclose()
 
+    assert result["results"] == []
     assert result["items"] == []
-    assert result["display_items"] == []
     assert result["display_summary"] == "missing: no items returned"
     assert result["no_items_reason"] == "upstream_hits_empty"
     assert result["debug"]["upstream_hits_count"] == 0
