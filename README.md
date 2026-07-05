@@ -103,11 +103,27 @@ ChatGPT 互換性のため、商品データは MCP tool result の `content[0].
 
 - `results`: `id`, `title`, `url`, `text`, `metadata` を含む商品検索結果リスト
 - `display_summary`: MCP クライアントや LLM が読み取りやすい検索結果サマリー
+- `items`: Yahoo!ショッピング API の商品 `hits` を MCP 向けに snake_case へ正規化した詳細リスト
 - `debug`: 上流 URL、HTTP status、上流キー、`hits` 件数、整形後件数、キャッシュヒット有無
 - `no_items_reason`: 商品がない場合の理由。例: `upstream_hits_empty`
 
 `results[*].metadata` には `price`, `price_text`, `seller_name`, `image_url`, `badges` が入ります。
 `debug` は原因切り分け用で、商品が見えない場合に上流 `hits` 件数、整形後件数、キャッシュヒット有無を確認するためのものです。
+
+`items[*]` には既存の `name`, `url`, `price`, `in_stock`, `condition`, `image`, `review`, `seller`, `description` に加えて、次の追加フィールドが入ります。Yahoo API 側で該当フィールドが欠損している場合は `null` または空リストになります。
+
+- `code`: Yahoo API `code`
+- `headline`: Yahoo API `headLine`
+- `price_label`: Yahoo API `priceLabel`。`default_price`, `discounted_price`, `fixed_price`, `period_start`, `period_end`
+- `ex_image`: Yahoo API `exImage`。`url`, `width`, `height`
+- `genre_category`: Yahoo API `genreCategory`。`id`, `name`, `depth`
+- `parent_genre_categories`: Yahoo API `parentGenreCategories`
+- `brand`: Yahoo API `brand`。`id`, `name`
+- `parent_brands`: Yahoo API `parentBrands`
+- `jan_code`: Yahoo API `janCode`
+- `delivery`: Yahoo API `delivery`。`area`, `deadline`, `day`
+
+今回返却対象に含めていない Yahoo API フィールドは `point.lyLimited*`, `shipping`, `payment`, `seller.sellerId`, `seller.review` です。
 
 ## 公開サーバー利用時の注意
 

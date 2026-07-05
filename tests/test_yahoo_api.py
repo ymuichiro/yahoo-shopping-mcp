@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import multiprocessing as mp
 import time
 from pathlib import Path
@@ -79,12 +80,28 @@ def _yahoo_item_search_response() -> dict:
         "firstResultsPosition": 1,
         "hits": [
             {
+                "code": "store_desk-lamp",
                 "name": "Desk Lamp",
+                "headLine": "Bright compact lamp",
                 "url": "https://example.com/desk-lamp",
                 "price": 3200,
+                "priceLabel": {
+                    "defaultPrice": 3980,
+                    "discountedPrice": 3200,
+                    "fixedPrice": None,
+                    "periodStart": 1783090800,
+                    "periodEnd": 1783270800,
+                },
                 "inStock": True,
                 "condition": "new",
                 "image": {"small": "https://example.com/s.jpg", "medium": "https://example.com/m.jpg"},
+                "exImage": {"url": "https://example.com/ex.jpg", "width": 600, "height": 600},
+                "genreCategory": {"id": 2506, "name": "Furniture", "depth": 2},
+                "parentGenreCategories": [{"id": 1, "name": "Shopping", "depth": 0}],
+                "brand": {"id": 123, "name": "Lamp Brand"},
+                "parentBrands": [{"id": 100, "name": "Lighting"}],
+                "janCode": "4900000000000",
+                "delivery": {"area": "13", "deadline": 13, "day": 1},
                 "review": {"rate": 4.5, "count": 12, "url": "https://example.com/review"},
                 "seller": {"name": "Store", "url": "https://example.com/store", "isBestSeller": True},
                 "description": "compact lamp",
@@ -101,8 +118,140 @@ def _yahoo_item_search_response() -> dict:
     }
 
 
+REQUEST_CASES = [
+    (
+        "query_only",
+        {"query": "nike"},
+        {"appid": "test-appid", "query": "nike", "results": "20", "start": "1"},
+    ),
+    (
+        "jan_code_only",
+        {"jan_code": 4900000000000},
+        {"appid": "test-appid", "jan_code": "4900000000000", "results": "20", "start": "1"},
+    ),
+    (
+        "price_from_only",
+        {"query": "nike", "price_from": 1000},
+        {"appid": "test-appid", "query": "nike", "price_from": "1000", "results": "20", "start": "1"},
+    ),
+    (
+        "price_to_only",
+        {"query": "nike", "price_to": 2000},
+        {"appid": "test-appid", "query": "nike", "price_to": "2000", "results": "20", "start": "1"},
+    ),
+    (
+        "price_range",
+        {"query": "nike", "price_from": 1000, "price_to": 2000},
+        {
+            "appid": "test-appid",
+            "query": "nike",
+            "price_from": "1000",
+            "price_to": "2000",
+            "results": "20",
+            "start": "1",
+        },
+    ),
+    (
+        "stock_true",
+        {"query": "nike", "in_stock": True},
+        {"appid": "test-appid", "query": "nike", "in_stock": "true", "results": "20", "start": "1"},
+    ),
+    (
+        "stock_false",
+        {"query": "nike", "in_stock": False},
+        {"appid": "test-appid", "query": "nike", "in_stock": "false", "results": "20", "start": "1"},
+    ),
+    (
+        "condition_new",
+        {"query": "nike", "condition": "new"},
+        {"appid": "test-appid", "query": "nike", "condition": "new", "results": "20", "start": "1"},
+    ),
+    (
+        "condition_used",
+        {"query": "nike", "condition": "used"},
+        {"appid": "test-appid", "query": "nike", "condition": "used", "results": "20", "start": "1"},
+    ),
+    (
+        "shipping_free",
+        {"query": "nike", "shipping": "free"},
+        {"appid": "test-appid", "query": "nike", "shipping": "free", "results": "20", "start": "1"},
+    ),
+    (
+        "shipping_conditional_free",
+        {"query": "nike", "shipping": "conditional_free"},
+        {
+            "appid": "test-appid",
+            "query": "nike",
+            "shipping": "conditional_free",
+            "results": "20",
+            "start": "1",
+        },
+    ),
+    (
+        "shipping_both",
+        {"query": "nike", "shipping": "free,conditional_free"},
+        {
+            "appid": "test-appid",
+            "query": "nike",
+            "shipping": "free,conditional_free",
+            "results": "20",
+            "start": "1",
+        },
+    ),
+    (
+        "sort_score",
+        {"query": "nike", "sort": "-score"},
+        {"appid": "test-appid", "query": "nike", "sort": "-score", "results": "20", "start": "1"},
+    ),
+    (
+        "sort_price_asc",
+        {"query": "nike", "sort": "+price"},
+        {"appid": "test-appid", "query": "nike", "sort": "+price", "results": "20", "start": "1"},
+    ),
+    (
+        "sort_price_desc",
+        {"query": "nike", "sort": "-price"},
+        {"appid": "test-appid", "query": "nike", "sort": "-price", "results": "20", "start": "1"},
+    ),
+    (
+        "sort_review_count",
+        {"query": "nike", "sort": "-review_count"},
+        {"appid": "test-appid", "query": "nike", "sort": "-review_count", "results": "20", "start": "1"},
+    ),
+    (
+        "mixed_all",
+        {
+            "query": "ゲーミングデスク",
+            "jan_code": "4900000000000",
+            "price_from": 1000,
+            "price_to": 2000,
+            "in_stock": False,
+            "condition": "used",
+            "shipping": "free",
+            "sort": "-review_count",
+            "results": 5,
+            "start": 11,
+        },
+        {
+            "appid": "test-appid",
+            "query": "ゲーミングデスク",
+            "jan_code": "4900000000000",
+            "price_from": "1000",
+            "price_to": "2000",
+            "in_stock": "false",
+            "condition": "used",
+            "shipping": "free",
+            "sort": "-review_count",
+            "results": "5",
+            "start": "11",
+        },
+    ),
+]
+
+
 @pytest.mark.anyio
-async def test_maps_request_parameters(tmp_path: Path) -> None:
+@pytest.mark.parametrize("payload_kwargs, expected_params", [(case[1], case[2]) for case in REQUEST_CASES], ids=[case[0] for case in REQUEST_CASES])
+async def test_maps_request_parameters_across_query_patterns(tmp_path: Path, payload_kwargs: dict, expected_params: dict) -> None:
     captured = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -112,20 +261,38 @@ async def test_maps_request_parameters(tmp_path: Path) -> None:
             json={"totalResultsAvailable": 1, "totalResultsReturned": 1, "firstResultsPosition": 1, "hits": []},
         )
 
-    client = build_client(tmp_path, handler)
-    payload = SearchProductsInput(query="nike", price_from=1000, price_to=2000, results=10, start=11)
+    client = build_client(tmp_path, handler, rate_seconds=0.0)
 
     try:
-        await client.search(payload)
+        await client.search(SearchProductsInput(**payload_kwargs))
     finally:
         await client._http_client.aclose()
 
-    assert captured["params"]["appid"] == "test-appid"
-    assert captured["params"]["query"] == "nike"
-    assert captured["params"]["price_from"] == "1000"
-    assert captured["params"]["price_to"] == "2000"
-    assert captured["params"]["results"] == "10"
-    assert captured["params"]["start"] == "11"
+    assert captured["params"] == expected_params
+
+
+@pytest.mark.anyio
+async def test_upstream_request_log_redacts_appid(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"totalResultsAvailable": 1, "totalResultsReturned": 1, "firstResultsPosition": 1, "hits": []},
+        )
+
+    caplog.set_level(logging.INFO, logger="yahoo_shopping_mcp.yahoo_api")
+    client = build_client(tmp_path, handler, rate_seconds=0.0)
+
+    try:
+        await client.search(SearchProductsInput(query="nike", price_from=1000, sort="-score"))
+    finally:
+        await client._http_client.aclose()
+
+    log_text = caplog.text
+    assert "[REDACTED]" in log_text
+    assert "test-appid" not in log_text
+    assert '"query": "nike"' in log_text
+    assert '"price_from": 1000' in log_text
+    assert '"sort": "-score"' in log_text
 
 
 @pytest.mark.anyio
@@ -306,6 +473,22 @@ async def test_formats_display_items_and_debug_metadata(tmp_path: Path) -> None:
     assert result["display_items"][0]["product_url"] == "https://example.com/desk-lamp"
     assert result["display_items"][0]["image_url"] == "https://example.com/m.jpg"
     assert result["display_items"][0]["badges"] == ["In stock", "Free shipping"]
+    assert result["items"][0]["code"] == "store_desk-lamp"
+    assert result["items"][0]["headline"] == "Bright compact lamp"
+    assert result["items"][0]["price_label"]["default_price"] == 3980
+    assert result["items"][0]["price_label"]["discounted_price"] == 3200
+    assert result["items"][0]["price_label"]["fixed_price"] is None
+    assert result["items"][0]["price_label"]["period_start"] == 1783090800
+    assert result["items"][0]["price_label"]["period_end"] == 1783270800
+    assert result["items"][0]["ex_image"] == {"url": "https://example.com/ex.jpg", "width": 600, "height": 600}
+    assert result["items"][0]["genre_category"] == {"id": 2506, "name": "Furniture", "depth": 2}
+    assert result["items"][0]["parent_genre_categories"] == [{"id": 1, "name": "Shopping", "depth": 0}]
+    assert result["items"][0]["brand"] == {"id": 123, "name": "Lamp Brand"}
+    assert result["items"][0]["parent_brands"] == [{"id": 100, "name": "Lighting"}]
+    assert result["items"][0]["jan_code"] == "4900000000000"
+    assert result["items"][0]["delivery"] == {"area": "13", "deadline": 13, "day": 1}
+    assert result["items"][1]["price_label"] is None
+    assert result["items"][1]["parent_genre_categories"] == []
     assert result["debug"]["upstream_url"] == YAHOO_ITEM_SEARCH_URL
     assert result["debug"]["upstream_status"] == 200
     assert "hits" in result["debug"]["upstream_keys"]
@@ -548,12 +731,22 @@ async def test_streamable_http_tool_call_returns_structured_payload(tmp_path: Pa
                 "firstResultsPosition": 1,
                 "hits": [
                     {
+                        "code": "store_desk-lamp",
                         "name": "Desk Lamp",
+                        "headLine": "Bright compact lamp",
                         "url": "https://example.com/desk-lamp",
                         "price": 3200,
+                        "priceLabel": {"defaultPrice": 3980, "discountedPrice": 3200},
                         "inStock": True,
                         "condition": "new",
                         "image": {"small": "https://example.com/s.jpg", "medium": "https://example.com/m.jpg"},
+                        "exImage": {"url": "https://example.com/ex.jpg", "width": 600, "height": 600},
+                        "genreCategory": {"id": 2506, "name": "Furniture", "depth": 2},
+                        "parentGenreCategories": [{"id": 1, "name": "Shopping", "depth": 0}],
+                        "brand": {"id": 123, "name": "Lamp Brand"},
+                        "parentBrands": [{"id": 100, "name": "Lighting"}],
+                        "janCode": "4900000000000",
+                        "delivery": {"area": "13", "deadline": 13, "day": 1},
                         "review": {"rate": 4.5, "count": 12, "url": "https://example.com/review"},
                         "seller": {"name": "Store", "url": "https://example.com/store", "isBestSeller": True},
                         "description": "compact lamp",
@@ -583,17 +776,32 @@ async def test_streamable_http_tool_call_returns_structured_payload(tmp_path: Pa
             ):
                 async with ClientSession(read_stream, write_stream) as session:
                     await session.initialize()
+                    tools = await session.list_tools()
                     result = await session.call_tool("search_products", {"query": "lamp"})
 
     content_payload = json.loads(result.content[0].text)
     content_text = result.content[0].text
-    assert result.structuredContent is None
+    assert tools.tools[0].outputSchema is not None
+    assert tools.tools[0].outputSchema["properties"]["items"]["type"] == "array"
+    assert result.structuredContent is not None
+    assert result.structuredContent["results"] == content_payload["results"]
+    assert result.structuredContent["items"] == content_payload["items"]
     assert content_text.lstrip().startswith('{\n  "results"')
     assert content_payload["summary"]["total_results_available"] == 1
     assert content_payload["results"][0]["title"] == "Desk Lamp"
     assert content_payload["results"][0]["metadata"]["price"] == 3200
     assert content_payload["results"][0]["metadata"]["seller_name"] == "Store"
     assert content_payload["results"][0]["url"] == "https://example.com/desk-lamp"
+    assert content_payload["items"][0]["code"] == "store_desk-lamp"
+    assert content_payload["items"][0]["headline"] == "Bright compact lamp"
+    assert content_payload["items"][0]["price_label"]["discounted_price"] == 3200
+    assert content_payload["items"][0]["ex_image"]["url"] == "https://example.com/ex.jpg"
+    assert content_payload["items"][0]["genre_category"]["id"] == 2506
+    assert content_payload["items"][0]["parent_genre_categories"][0]["name"] == "Shopping"
+    assert content_payload["items"][0]["brand"]["name"] == "Lamp Brand"
+    assert content_payload["items"][0]["parent_brands"][0]["id"] == 100
+    assert content_payload["items"][0]["jan_code"] == "4900000000000"
+    assert content_payload["items"][0]["delivery"]["deadline"] == 13
     assert content_payload["debug"]["upstream_url"] == YAHOO_ITEM_SEARCH_URL
     assert content_payload["debug"]["upstream_hits_count"] == 1
     assert content_payload["debug"]["formatted_items_count"] == 1

@@ -101,11 +101,15 @@ async def test_streamable_http_tool_call_is_public(tmp_path) -> None:
             ):
                 async with ClientSession(read_stream, write_stream) as session:
                     await session.initialize()
+                    tools = await session.list_tools()
                     result = await session.call_tool("search_products", {"query": "lamp"})
 
     assert result.isError is False
     content_payload = json.loads(result.content[0].text)
-    assert result.structuredContent is None
+    assert tools.tools[0].outputSchema is not None
+    assert tools.tools[0].outputSchema["properties"]["results"]["type"] == "array"
+    assert result.structuredContent is not None
+    assert result.structuredContent["results"] == content_payload["results"]
     assert content_payload["summary"]["total_results_available"] == 1
     assert content_payload["no_items_reason"] == "upstream_hits_empty"
 
@@ -205,11 +209,14 @@ async def test_streamable_http_tool_call_works_with_internal_http_client(
             ):
                 async with ClientSession(read_stream, write_stream) as session:
                     await session.initialize()
+                    tools = await session.list_tools()
                     result = await session.call_tool("search_products", {"query": "lamp"})
 
     assert result.isError is False
     content_payload = json.loads(result.content[0].text)
-    assert result.structuredContent is None
+    assert tools.tools[0].outputSchema is not None
+    assert result.structuredContent is not None
+    assert result.structuredContent["results"][0]["title"] == "Desk Lamp"
     assert content_payload["results"][0]["title"] == "Desk Lamp"
     assert content_payload["results"][0]["metadata"]["price"] == 3200
 

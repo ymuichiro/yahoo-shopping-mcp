@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 import random
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -16,6 +18,10 @@ from yahoo_shopping_mcp.errors import YahooShoppingError
 from yahoo_shopping_mcp.models import SearchProductsInput, UsageState
 from yahoo_shopping_mcp.rate_limiter import SerialRateLimiter
 from yahoo_shopping_mcp.storage import CacheStore, UsageStore
+
+logger = logging.getLogger(__name__)
+REDACTED_VALUE = "[REDACTED]"
+SENSITIVE_REQUEST_KEYS = {"appid", "api_key", "access_token", "authorization", "token"}
 
 
 class RequestCoalescer:
@@ -116,6 +122,7 @@ class YahooShoppingClient:
         server_retry_budget = 1
 
         for attempt in range(retries_for_rate_limit + 1):
+            self._log_upstream_request(params, attempt)
             try:
                 response = await self._http_client.get(YAHOO_ITEM_SEARCH_URL, params=params)
             except httpx.HTTPError as exc:
@@ -126,6 +133,7 @@ class YahooShoppingClient:
                     details={"reason": str(exc)},
                 ) from exc
 
+            self._log_upstream_response(response.status_code, attempt)
             if response.status_code == 429 and attempt < retries_for_rate_limit:
                 await asyncio.sleep((2**attempt) + random.uniform(0.0, 0.25))
                 continue
@@ -156,6 +164,30 @@ class YahooShoppingClient:
         optional_params = request.model_dump(exclude_none=True, exclude={"results", "start"})
         params.update(optional_params)
         return params
+
+    @staticmethod
+    def _redact_request_params(params: dict[str, Any]) -> dict[str, Any]:
+        return {
+            key: REDACTED_VALUE if key.lower() in SENSITIVE_REQUEST_KEYS else value
+            for key, value in params.items()
+        }
+
+    def _log_upstream_request(self, params: dict[str, Any], attempt: int) -> None:
+        redacted_params = self._redact_request_params(params)
+        logger.info(
+            "Yahoo Shopping API request attempt=%s method=GET url=%s params=%s body=None",
+            attempt + 1,
+            YAHOO_ITEM_SEARCH_URL,
+            json.dumps(redacted_params, ensure_ascii=False, sort_keys=True),
+        )
+
+    def _log_upstream_response(self, status_code: int, attempt: int) -> None:
+        logger.info(
+            "Yahoo Shopping API response attempt=%s method=GET url=%s status=%s",
+            attempt + 1,
+            YAHOO_ITEM_SEARCH_URL,
+            status_code,
+        )
 
     def _format_response(
         self,
@@ -221,19 +253,37 @@ class YahooShoppingClient:
 
     @staticmethod
     def _format_item(hit: dict[str, Any]) -> dict[str, Any]:
-        review = hit.get("review") or {}
-        seller = hit.get("seller") or {}
-        image = hit.get("image") or {}
+        review = YahooShoppingClient._as_dict(hit.get("review"))
+        seller = YahooShoppingClient._as_dict(hit.get("seller"))
+        image = YahooShoppingClient._as_dict(hit.get("image"))
+        price_label = YahooShoppingClient._as_dict(hit.get("priceLabel"))
+        ex_image = YahooShoppingClient._as_dict(hit.get("exImage"))
+        genre_category = YahooShoppingClient._as_dict(hit.get("genreCategory"))
+        brand = YahooShoppingClient._as_dict(hit.get("brand"))
+        delivery = YahooShoppingClient._as_dict(hit.get("delivery"))
         return {
+            "code": hit.get("code"),
             "name": hit.get("name"),
+            "headline": hit.get("headLine"),
             "url": hit.get("url"),
             "price": hit.get("price"),
+            "price_label": YahooShoppingClient._format_price_label(price_label),
             "in_stock": hit.get("inStock"),
             "condition": hit.get("condition"),
             "image": {
                 "small": image.get("small"),
                 "medium": image.get("medium"),
             },
+            "ex_image": YahooShoppingClient._format_ex_image(ex_image),
+            "genre_category": YahooShoppingClient._format_genre_category(genre_category),
+            "parent_genre_categories": YahooShoppingClient._format_list(
+                hit.get("parentGenreCategories"),
+                YahooShoppingClient._format_genre_category,
+            ),
+            "brand": YahooShoppingClient._format_brand(brand),
+            "parent_brands": YahooShoppingClient._format_list(hit.get("parentBrands"), YahooShoppingClient._format_brand),
+            "jan_code": hit.get("janCode"),
+            "delivery": YahooShoppingClient._format_delivery(delivery),
             "review": {
                 "rate": review.get("rate"),
                 "count": review.get("count"),
@@ -246,6 +296,76 @@ class YahooShoppingClient:
             },
             "description": hit.get("description"),
         }
+
+    @staticmethod
+    def _as_dict(value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return value
+        return {}
+
+    @staticmethod
+    def _format_price_label(price_label: dict[str, Any]) -> dict[str, Any] | None:
+        if not price_label:
+            return None
+        return {
+            "default_price": price_label.get("defaultPrice"),
+            "discounted_price": price_label.get("discountedPrice"),
+            "fixed_price": price_label.get("fixedPrice"),
+            "period_start": price_label.get("periodStart"),
+            "period_end": price_label.get("periodEnd"),
+        }
+
+    @staticmethod
+    def _format_ex_image(ex_image: dict[str, Any]) -> dict[str, Any] | None:
+        if not ex_image:
+            return None
+        return {
+            "url": ex_image.get("url"),
+            "width": ex_image.get("width"),
+            "height": ex_image.get("height"),
+        }
+
+    @staticmethod
+    def _format_genre_category(category: dict[str, Any]) -> dict[str, Any] | None:
+        if not category:
+            return None
+        return {
+            "id": category.get("id"),
+            "name": category.get("name"),
+            "depth": category.get("depth"),
+        }
+
+    @staticmethod
+    def _format_brand(brand: dict[str, Any]) -> dict[str, Any] | None:
+        if not brand:
+            return None
+        return {
+            "id": brand.get("id"),
+            "name": brand.get("name"),
+        }
+
+    @staticmethod
+    def _format_delivery(delivery: dict[str, Any]) -> dict[str, Any] | None:
+        if not delivery:
+            return None
+        return {
+            "area": delivery.get("area"),
+            "deadline": delivery.get("deadline"),
+            "day": delivery.get("day"),
+        }
+
+    @staticmethod
+    def _format_list(value: Any, formatter: Callable[[dict[str, Any]], dict[str, Any] | None]) -> list[dict[str, Any]]:
+        if not isinstance(value, list):
+            return []
+        formatted_items = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            formatted = formatter(item)
+            if formatted is not None:
+                formatted_items.append(formatted)
+        return formatted_items
 
     @staticmethod
     def _format_search_result(

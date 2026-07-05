@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 import json
-from typing import Any
+import logging
+from typing import Annotated, Any
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -74,10 +75,16 @@ def _build_transport_security(settings: Settings) -> TransportSecuritySettings |
     )
 
 
+def _quiet_http_client_logging() -> None:
+    for logger_name in ("httpx", "httpcore"):
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+
 def _build_product_result_text(payload: dict[str, Any]) -> str:
     model_visible_payload = {
         "results": payload.get("results") or [],
         "display_summary": payload.get("display_summary"),
+        "items": payload.get("items") or [],
         "no_items_reason": payload.get("no_items_reason"),
         "summary": payload.get("summary"),
         "debug": payload.get("debug"),
@@ -91,6 +98,7 @@ def _build_tool_result(payload: dict[str, Any]) -> CallToolResult:
     content_payload = validated.model_dump(mode="json")
     return CallToolResult(
         content=[TextContent(type="text", text=_build_product_result_text(content_payload))],
+        structuredContent=content_payload,
     )
 
 
@@ -122,6 +130,7 @@ def create_mcp_server(
     http_client: httpx.AsyncClient | None = None,
 ) -> FastMCP:
     resolved_settings = settings or load_settings()
+    _quiet_http_client_logging()
 
     @asynccontextmanager
     async def lifespan(_: FastMCP):
@@ -166,10 +175,10 @@ def create_mcp_server(
     async def healthz(_request: Request):
         return JSONResponse({"ok": True})
 
-    @mcp.tool(structured_output=False)
+    @mcp.tool(structured_output=True)
     async def search_products(
         query: str | None = None,
-        jan_code: str | None = None,
+        jan_code: str | int | None = None,
         price_from: int | None = None,
         price_to: int | None = None,
         in_stock: bool | None = None,
@@ -178,7 +187,7 @@ def create_mcp_server(
         sort: str | None = None,
         results: int = 20,
         start: int = 1,
-    ) -> CallToolResult:
+    ) -> Annotated[CallToolResult, SearchProductsResponse]:
         """Search Yahoo! Shopping products with global rate limiting, retry, caching, and attribution metadata."""
 
         try:
