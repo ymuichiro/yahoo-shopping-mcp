@@ -52,67 +52,10 @@ class CachedResponse(BaseModel):
     payload: dict
 
 
-class RateLimitWindow(BaseModel):
-    window_started_at: int
-    count: int
-
-
-class RateLimitStoreData(BaseModel):
-    counters: dict[str, RateLimitWindow] = Field(default_factory=dict)
-
-
 class SummaryPayload(BaseModel):
     total_results_available: int
     total_results_returned: int
     first_results_position: int
-
-
-class ImagePayload(BaseModel):
-    small: str | None = None
-    medium: str | None = None
-
-
-class ExImagePayload(BaseModel):
-    url: str | None = None
-    width: int | None = None
-    height: int | None = None
-
-
-class PriceLabelPayload(BaseModel):
-    default_price: int | float | None = None
-    discounted_price: int | float | None = None
-    fixed_price: int | float | None = None
-    period_start: int | str | None = None
-    period_end: int | str | None = None
-
-
-class GenreCategoryPayload(BaseModel):
-    id: int | str | None = None
-    name: str | None = None
-    depth: int | None = None
-
-
-class BrandPayload(BaseModel):
-    id: int | str | None = None
-    name: str | None = None
-
-
-class DeliveryPayload(BaseModel):
-    area: str | None = None
-    deadline: int | str | None = None
-    day: int | str | None = None
-
-
-class ReviewPayload(BaseModel):
-    rate: float | None = None
-    count: int | None = None
-    url: str | None = None
-
-
-class SellerPayload(BaseModel):
-    name: str | None = None
-    url: str | None = None
-    is_best_seller: bool | None = None
 
 
 class ItemPayload(BaseModel):
@@ -121,19 +64,19 @@ class ItemPayload(BaseModel):
     headline: str | None = None
     url: str | None = None
     price: int | float | None = None
-    price_label: PriceLabelPayload | None = None
+    price_label: dict[str, object] | None = None
     in_stock: bool | None = None
     condition: str | None = None
-    image: ImagePayload
-    ex_image: ExImagePayload | None = None
-    genre_category: GenreCategoryPayload | None = None
-    parent_genre_categories: list[GenreCategoryPayload] = Field(default_factory=list)
-    brand: BrandPayload | None = None
-    parent_brands: list[BrandPayload] = Field(default_factory=list)
+    image: dict[str, object | None]
+    ex_image: dict[str, object | None] | None = None
+    genre_category: dict[str, object] | None = None
+    parent_genre_categories: list[dict[str, object]] = Field(default_factory=list)
+    brand: dict[str, object] | None = None
+    parent_brands: list[dict[str, object]] = Field(default_factory=list)
     jan_code: str | None = None
-    delivery: DeliveryPayload | None = None
-    review: ReviewPayload
-    seller: SellerPayload
+    delivery: dict[str, object] | None = None
+    review: dict[str, object | None]
+    seller: dict[str, object | None]
     description: str | None = None
 
 

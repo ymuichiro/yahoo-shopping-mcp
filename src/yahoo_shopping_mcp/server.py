@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from dataclasses import asdict
 import json
 import logging
 import time
@@ -18,22 +17,8 @@ from starlette.responses import JSONResponse
 
 from yahoo_shopping_mcp.config import Settings, load_settings
 from yahoo_shopping_mcp.models import SearchProductsInput, SearchProductsResponse
-from yahoo_shopping_mcp.storage import CacheStore, SQLiteStateStore, StoredRateLimitExceededError, ensure_dir
+from yahoo_shopping_mcp.storage import CacheStore, SQLiteStateStore, StoredRateLimitExceededError
 from yahoo_shopping_mcp.yahoo_api import YahooShoppingClient, YahooShoppingError
-
-
-def _tool_error_json(*, kind: str, message: str, retryable: bool, http_status: int | None = None, provider_code: str | None = None, details: dict | None = None) -> str:
-    return json.dumps(
-        {
-            "kind": kind,
-            "message": message,
-            "retryable": retryable,
-            "http_status": http_status,
-            "provider_code": provider_code,
-            "details": details or {},
-        },
-        ensure_ascii=False,
-    )
 
 def create_mcp_server(
     settings: Settings | None = None,
@@ -56,8 +41,8 @@ def create_mcp_server(
 
     @asynccontextmanager
     async def lifespan(_: FastMCP):
-        ensure_dir(resolved_settings.state_dir)
-        ensure_dir(resolved_settings.cache_dir)
+        resolved_settings.state_dir.mkdir(parents=True, exist_ok=True)
+        resolved_settings.cache_dir.mkdir(parents=True, exist_ok=True)
         request_http_client = http_client or httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0))
         try:
             state_store = SQLiteStateStore(resolved_settings.state_dir)
@@ -182,18 +167,47 @@ def create_mcp_server(
             return result
         except ValidationError as exc:
             first_error = exc.errors()[0]
-            raise ToolError(_tool_error_json(kind="validation_error", message=first_error["msg"], retryable=False, details={"errors": exc.errors()})) from exc
+            raise ToolError(
+                json.dumps(
+                    {
+                        "kind": "validation_error",
+                        "message": first_error["msg"],
+                        "retryable": False,
+                        "http_status": None,
+                        "provider_code": None,
+                        "details": {"errors": exc.errors()},
+                    },
+                    ensure_ascii=False,
+                )
+            ) from exc
         except StoredRateLimitExceededError as exc:
             raise ToolError(
-                _tool_error_json(
-                    kind="global_rate_limited",
-                    message=f"Global rate limit exceeded. Retry after {exc.retry_after} seconds.",
-                    retryable=True,
-                    http_status=429,
+                json.dumps(
+                    {
+                        "kind": "global_rate_limited",
+                        "message": f"Global rate limit exceeded. Retry after {exc.retry_after} seconds.",
+                        "retryable": True,
+                        "http_status": 429,
+                        "provider_code": None,
+                        "details": {},
+                    },
+                    ensure_ascii=False,
                 )
             ) from exc
         except YahooShoppingError as exc:
-            raise ToolError(json.dumps(asdict(exc), ensure_ascii=False)) from exc
+            raise ToolError(
+                json.dumps(
+                    {
+                        "kind": exc.kind,
+                        "message": exc.message,
+                        "retryable": exc.retryable,
+                        "http_status": exc.http_status,
+                        "provider_code": exc.provider_code,
+                        "details": exc.details or {},
+                    },
+                    ensure_ascii=False,
+                )
+            ) from exc
 
     return mcp
 

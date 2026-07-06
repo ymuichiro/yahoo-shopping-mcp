@@ -3,8 +3,6 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Callable
-from typing import TypeVar
 
 from yahoo_shopping_mcp.constants import (
     CACHE_DIRNAME,
@@ -18,8 +16,6 @@ from yahoo_shopping_mcp.constants import (
     DEFAULT_WARNING_THRESHOLD,
     STATE_DIRNAME,
 )
-
-T = TypeVar("T")
 
 
 @dataclass(slots=True)
@@ -40,39 +36,32 @@ class Settings:
     cache_dir: Path = Path(".local") / CACHE_DIRNAME
 
 
-def _env(name: str, default: T, cast: Callable[[str], T] = lambda value: value) -> T:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    value = raw.strip()
-    return default if not value else cast(value)
-
-
 def load_settings() -> Settings:
-    app_id = _env("YAHOO_SHOPPING_APP_ID", "")
+    app_id = (os.getenv("YAHOO_SHOPPING_APP_ID") or "").strip()
     if not app_id:
         raise RuntimeError("YAHOO_SHOPPING_APP_ID is required.")
 
-    host = _env("YAHOO_SHOPPING_MCP_HOST", DEFAULT_HOST)
-    port = _env("YAHOO_SHOPPING_MCP_PORT", DEFAULT_PORT, int)
-    base_dir = Path(_env("YAHOO_SHOPPING_MCP_DATA_DIR", ".local")).resolve()
-    cache_ttl_seconds = _env("YAHOO_SHOPPING_MCP_CACHE_TTL_SECONDS", DEFAULT_CACHE_TTL_SECONDS, int)
-    base_rate_seconds = _env("YAHOO_SHOPPING_MCP_BASE_RATE_SECONDS", DEFAULT_BASE_RATE_SECONDS, float)
-    warning_threshold = _env("YAHOO_SHOPPING_MCP_WARNING_THRESHOLD", DEFAULT_WARNING_THRESHOLD, int)
-    hard_limit = _env("YAHOO_SHOPPING_MCP_HARD_LIMIT", DEFAULT_HARD_LIMIT, int)
-    global_rate_limit = _env("YAHOO_SHOPPING_MCP_GLOBAL_RATE_LIMIT", DEFAULT_GLOBAL_RATE_LIMIT, int)
-    global_window_seconds = _env("YAHOO_SHOPPING_MCP_GLOBAL_WINDOW_SECONDS", DEFAULT_GLOBAL_WINDOW_SECONDS, int)
-    allowed_hosts = _env(
-        "YAHOO_SHOPPING_MCP_ALLOWED_HOSTS",
-        None,
-        lambda value: [item.strip() for item in value.split(",") if item.strip()] or None,
-    )
-    allowed_origins = _env(
-        "YAHOO_SHOPPING_MCP_ALLOWED_ORIGINS",
-        None,
-        lambda value: [item.strip() for item in value.split(",") if item.strip()] or None,
-    )
-    tool_response_mode = _env("YAHOO_SHOPPING_MCP_TOOL_RESPONSE_MODE", "structured").lower()
+    host = (os.getenv("YAHOO_SHOPPING_MCP_HOST") or DEFAULT_HOST).strip() or DEFAULT_HOST
+    port_raw = (os.getenv("YAHOO_SHOPPING_MCP_PORT") or "").strip()
+    port = DEFAULT_PORT if not port_raw else int(port_raw)
+    base_dir = Path((os.getenv("YAHOO_SHOPPING_MCP_DATA_DIR") or ".local").strip() or ".local").resolve()
+    cache_ttl_raw = (os.getenv("YAHOO_SHOPPING_MCP_CACHE_TTL_SECONDS") or "").strip()
+    cache_ttl_seconds = DEFAULT_CACHE_TTL_SECONDS if not cache_ttl_raw else int(cache_ttl_raw)
+    base_rate_raw = (os.getenv("YAHOO_SHOPPING_MCP_BASE_RATE_SECONDS") or "").strip()
+    base_rate_seconds = DEFAULT_BASE_RATE_SECONDS if not base_rate_raw else float(base_rate_raw)
+    warning_raw = (os.getenv("YAHOO_SHOPPING_MCP_WARNING_THRESHOLD") or "").strip()
+    warning_threshold = DEFAULT_WARNING_THRESHOLD if not warning_raw else int(warning_raw)
+    hard_limit_raw = (os.getenv("YAHOO_SHOPPING_MCP_HARD_LIMIT") or "").strip()
+    hard_limit = DEFAULT_HARD_LIMIT if not hard_limit_raw else int(hard_limit_raw)
+    global_rate_raw = (os.getenv("YAHOO_SHOPPING_MCP_GLOBAL_RATE_LIMIT") or "").strip()
+    global_rate_limit = DEFAULT_GLOBAL_RATE_LIMIT if not global_rate_raw else int(global_rate_raw)
+    global_window_raw = (os.getenv("YAHOO_SHOPPING_MCP_GLOBAL_WINDOW_SECONDS") or "").strip()
+    global_window_seconds = DEFAULT_GLOBAL_WINDOW_SECONDS if not global_window_raw else int(global_window_raw)
+    allowed_hosts_raw = (os.getenv("YAHOO_SHOPPING_MCP_ALLOWED_HOSTS") or "").strip()
+    allowed_hosts = [item.strip() for item in allowed_hosts_raw.split(",") if item.strip()] or None
+    allowed_origins_raw = (os.getenv("YAHOO_SHOPPING_MCP_ALLOWED_ORIGINS") or "").strip()
+    allowed_origins = [item.strip() for item in allowed_origins_raw.split(",") if item.strip()] or None
+    tool_response_mode = (os.getenv("YAHOO_SHOPPING_MCP_TOOL_RESPONSE_MODE") or "structured").strip().lower()
     if tool_response_mode not in {"structured", "chatgpt"}:
         raise RuntimeError("YAHOO_SHOPPING_MCP_TOOL_RESPONSE_MODE must be one of: structured, chatgpt.")
 

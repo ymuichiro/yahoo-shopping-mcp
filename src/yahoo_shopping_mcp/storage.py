@@ -17,20 +17,12 @@ STATE_DB_FILENAME = "state.sqlite3"
 JST = ZoneInfo("Asia/Tokyo")
 
 
-def ensure_dir(path: Path) -> None:
-    path.mkdir(parents=True, exist_ok=True)
-
-
 def atomic_write_json(path: Path, payload: Any) -> None:
-    ensure_dir(path.parent)
+    path.parent.mkdir(parents=True, exist_ok=True)
     with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as temp_file:
         json.dump(payload, temp_file, ensure_ascii=False, separators=(",", ":"))
         temp_name = temp_file.name
     Path(temp_name).replace(path)
-
-
-def current_jst_date() -> str:
-    return datetime.now(JST).strftime("%Y-%m-%d")
 
 
 class StoredRateLimitExceededError(Exception):
@@ -42,11 +34,11 @@ class StoredRateLimitExceededError(Exception):
 class SQLiteStateStore:
     def __init__(self, state_dir: Path) -> None:
         self._path = state_dir / STATE_DB_FILENAME
-        ensure_dir(state_dir)
+        state_dir.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
     def load_usage(self, today: str | None = None) -> UsageState:
-        current_day = today or current_jst_date()
+        current_day = today or datetime.now(JST).strftime("%Y-%m-%d")
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
@@ -58,7 +50,7 @@ class SQLiteStateStore:
             return state
 
     def increment_usage(self, today: str | None = None) -> UsageState:
-        current_day = today or current_jst_date()
+        current_day = today or datetime.now(JST).strftime("%Y-%m-%d")
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
@@ -165,7 +157,7 @@ class CacheStore:
     def __init__(self, cache_dir: Path, ttl_seconds: int) -> None:
         self._cache_dir = cache_dir
         self._ttl_seconds = ttl_seconds
-        ensure_dir(cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
 
     def _cache_path(self, key: str) -> Path:
         return self._cache_dir / f"{key}.json"
