@@ -98,6 +98,8 @@ def _build_tool_result(payload: dict[str, Any]) -> CallToolResult:
         content=[TextContent(type="text", text=_build_product_result_text(content_payload))],
         structuredContent=content_payload,
     )
+
+
 def create_mcp_server(
     settings: Settings | None = None,
     *,
@@ -105,6 +107,7 @@ def create_mcp_server(
 ) -> FastMCP:
     resolved_settings = settings or load_settings()
     _quiet_http_client_logging()
+    structured_output_enabled = resolved_settings.tool_response_mode != "chatgpt"
 
     @asynccontextmanager
     async def lifespan(_: FastMCP):
@@ -160,7 +163,7 @@ def create_mcp_server(
     async def healthz(_request: Request):
         return JSONResponse({"ok": True})
 
-    @mcp.tool(structured_output=True)
+    @mcp.tool(structured_output=structured_output_enabled)
     async def search_products(
         query: str | None = None,
         jan_code: str | int | None = None,
@@ -197,7 +200,10 @@ def create_mcp_server(
             )
             response_payload = await _build_client(mcp).search(payload)
             response_payload["usage"]["global_rate_limit"] = rate_limit.model_dump()
-            return _build_tool_result(response_payload)
+            result = _build_tool_result(response_payload)
+            if resolved_settings.tool_response_mode == "chatgpt":
+                return CallToolResult(content=result.content)
+            return result
         except ValidationError as exc:
             first_error = exc.errors()[0]
             raise ToolError(

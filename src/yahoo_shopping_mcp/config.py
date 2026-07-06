@@ -14,6 +14,7 @@ from yahoo_shopping_mcp.constants import (
     DEFAULT_HOST,
     DEFAULT_PORT,
     DEFAULT_WARNING_THRESHOLD,
+    DEFAULT_TOOL_RESPONSE_MODE,
     STATE_DIRNAME,
 )
 
@@ -31,6 +32,7 @@ class Settings:
     global_window_seconds: int = DEFAULT_GLOBAL_WINDOW_SECONDS
     allowed_hosts: list[str] | None = None
     allowed_origins: list[str] | None = None
+    tool_response_mode: str = DEFAULT_TOOL_RESPONSE_MODE
     state_dir: Path = Path(".local") / STATE_DIRNAME
     cache_dir: Path = Path(".local") / CACHE_DIRNAME
 
@@ -61,6 +63,14 @@ def _parse_float_env(name: str, default: float) -> float:
     return float(raw) if raw is not None else default
 
 
+def _parse_response_mode_env(name: str, default: str) -> str:
+    raw = _get_env(name)
+    value = (raw or default).lower()
+    if value not in {"structured", "chatgpt"}:
+        raise RuntimeError(f"{name} must be one of: structured, chatgpt.")
+    return value
+
+
 def load_settings() -> Settings:
     app_id = _get_env("YAHOO_SHOPPING_APP_ID")
     if not app_id:
@@ -79,6 +89,10 @@ def load_settings() -> Settings:
     )
     allowed_hosts = _parse_csv_env("YAHOO_SHOPPING_MCP_ALLOWED_HOSTS")
     allowed_origins = _parse_csv_env("YAHOO_SHOPPING_MCP_ALLOWED_ORIGINS")
+    tool_response_mode = _parse_response_mode_env(
+        "YAHOO_SHOPPING_MCP_TOOL_RESPONSE_MODE",
+        DEFAULT_TOOL_RESPONSE_MODE,
+    )
 
     return Settings(
         app_id=app_id,
@@ -92,6 +106,7 @@ def load_settings() -> Settings:
         global_window_seconds=global_window_seconds,
         allowed_hosts=allowed_hosts,
         allowed_origins=allowed_origins,
+        tool_response_mode=tool_response_mode,
         state_dir=base_dir / STATE_DIRNAME,
         cache_dir=base_dir / CACHE_DIRNAME,
     )

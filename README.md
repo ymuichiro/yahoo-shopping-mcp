@@ -100,6 +100,7 @@ http://127.0.0.1:8000/mcp
 ChatGPT 互換性のため、商品データは MCP tool result の `content[0].text` に JSON として返します。
 `structuredContent` / `outputSchema` だけに商品データを置くと、一部の MCP host では検索結果本文として認識されず、メタ情報だけが会話側に露出することがあります。
 そのため、このサーバーではモデルが読む本文として `content[0].text` を正とし、商品リストを先頭の `results` に置きます。
+`YAHOO_SHOPPING_MCP_TOOL_RESPONSE_MODE=chatgpt` を使うと ChatGPT 向けに `content[0].text` 優先、`structured` を使うと従来の `structuredContent` 併用に戻せます。
 
 - `results`: `id`, `title`, `url`, `text`, `metadata` を含む商品検索結果リスト
 - `display_summary`: MCP クライアントや LLM が読み取りやすい検索結果サマリー
@@ -194,6 +195,7 @@ make init-env
 - `YAHOO_SHOPPING_MCP_GLOBAL_WINDOW_SECONDS`
 - `YAHOO_SHOPPING_MCP_CACHE_TTL_SECONDS`
 - `YAHOO_SHOPPING_MCP_BASE_RATE_SECONDS`
+- `YAHOO_SHOPPING_MCP_TOOL_RESPONSE_MODE`
 
 ローカル compose 起動:
 
@@ -237,6 +239,7 @@ ALLOWED_HOSTS=localhost:*,127.0.0.1:*,non-official-yahoo-shopping-mcp.notelligen
 ALLOWED_ORIGINS=http://localhost:18000,http://127.0.0.1:18000,https://non-official-yahoo-shopping-mcp.notelligent.app,https://chatgpt.com,https://chat.openai.com
 YAHOO_SHOPPING_MCP_GLOBAL_RATE_LIMIT=60
 YAHOO_SHOPPING_MCP_GLOBAL_WINDOW_SECONDS=60
+YAHOO_SHOPPING_MCP_TOOL_RESPONSE_MODE=chatgpt
 ```
 
 ## 開発

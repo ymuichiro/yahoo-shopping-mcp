@@ -115,6 +115,48 @@ async def test_streamable_http_tool_call_is_public(tmp_path) -> None:
 
 
 @pytest.mark.anyio
+async def test_streamable_http_chatgpt_mode_prefers_text_only(tmp_path) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"totalResultsAvailable": 1, "totalResultsReturned": 1, "firstResultsPosition": 1, "hits": []},
+        )
+
+    settings = Settings(
+        app_id="test-appid",
+        host="127.0.0.1",
+        port=8000,
+        state_dir=tmp_path / "state",
+        cache_dir=tmp_path / "cache",
+        tool_response_mode="chatgpt",
+    )
+    app = create_mcp_server(
+        settings,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    ).streamable_http_app()
+
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:8000") as client:
+            async with streamable_http_client("http://127.0.0.1:8000/mcp", http_client=client) as (
+                read_stream,
+                write_stream,
+                _,
+            ):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    tools = await session.list_tools()
+                    result = await session.call_tool("search_products", {"query": "lamp"})
+
+    content_payload = json.loads(result.content[0].text)
+    assert tools.tools[0].outputSchema is None
+    assert result.structuredContent is None
+    assert content_payload["results"] == []
+    assert content_payload["display_summary"] == "lamp: no items returned"
+    assert content_payload["summary"]["total_results_available"] == 1
+
+
+@pytest.mark.anyio
 async def test_streamable_http_allows_configured_cors_origin(tmp_path) -> None:
     settings = Settings(
         app_id="test-appid",
