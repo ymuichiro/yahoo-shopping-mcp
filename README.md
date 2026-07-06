@@ -234,7 +234,6 @@ Named Tunnel の `Published application`:
 `.env.example`:
 
 ```env
-APP_PORT=18000
 YAHOO_SHOPPING_APP_ID=replace-with-your-yahoo-app-id
 CLOUDFLARE_TUNNEL_TOKEN=replace-with-your-cloudflare-tunnel-token
 ALLOWED_HOSTS=localhost:*,127.0.0.1:*,non-official-yahoo-shopping-mcp.notelligent.app

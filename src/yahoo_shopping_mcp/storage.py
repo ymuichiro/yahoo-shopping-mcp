@@ -10,8 +10,9 @@ from tempfile import NamedTemporaryFile
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from yahoo_shopping_mcp.constants import GLOBAL_RATE_LIMIT_FILENAME, STATE_DB_FILENAME, USAGE_FILENAME
-from yahoo_shopping_mcp.models import CachedResponse, GlobalRateLimitPayload, RateLimitStoreData, UsageState
+from yahoo_shopping_mcp.models import CachedResponse, GlobalRateLimitPayload, UsageState
+
+STATE_DB_FILENAME = "state.sqlite3"
 
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -41,8 +42,6 @@ class StoredRateLimitExceededError(Exception):
 class SQLiteStateStore:
     def __init__(self, state_dir: Path) -> None:
         self._path = state_dir / STATE_DB_FILENAME
-        self._legacy_usage_path = state_dir / USAGE_FILENAME
-        self._legacy_global_rate_limit_path = state_dir / GLOBAL_RATE_LIMIT_FILENAME
         ensure_dir(state_dir)
         self._initialize()
 
@@ -57,25 +56,6 @@ class SQLiteStateStore:
                 raise
             conn.commit()
             return state
-
-    def save_usage(self, state: UsageState) -> None:
-        with self._connect() as conn:
-            conn.execute("BEGIN IMMEDIATE")
-            try:
-                conn.execute(
-                    """
-                    INSERT INTO usage_state (singleton, date, count)
-                    VALUES (1, ?, ?)
-                    ON CONFLICT(singleton) DO UPDATE SET
-                        date = excluded.date,
-                        count = excluded.count
-                    """,
-                    (state.date, state.count),
-                )
-            except Exception:
-                conn.rollback()
-                raise
-            conn.commit()
 
     def increment_usage(self, today: str | None = None) -> UsageState:
         current_day = today or current_jst_date()
@@ -165,37 +145,6 @@ class SQLiteStateStore:
                     count INTEGER NOT NULL
                 )
                 """
-            )
-            self._migrate_legacy_usage(conn)
-            self._migrate_legacy_global_rate_limits(conn)
-
-    def _migrate_legacy_usage(self, conn: sqlite3.Connection) -> None:
-        existing = conn.execute("SELECT 1 FROM usage_state WHERE singleton = 1").fetchone()
-        if existing is not None or not self._legacy_usage_path.exists():
-            return
-        payload = json.loads(self._legacy_usage_path.read_text(encoding="utf-8"))
-        state = UsageState.model_validate(payload)
-        conn.execute(
-            "INSERT INTO usage_state (singleton, date, count) VALUES (1, ?, ?)",
-            (state.date, state.count),
-        )
-
-    def _migrate_legacy_global_rate_limits(self, conn: sqlite3.Connection) -> None:
-        existing = conn.execute("SELECT 1 FROM global_rate_limit_windows LIMIT 1").fetchone()
-        if existing is not None or not self._legacy_global_rate_limit_path.exists():
-            return
-        payload = json.loads(self._legacy_global_rate_limit_path.read_text(encoding="utf-8"))
-        state = RateLimitStoreData.model_validate(payload)
-        for key, window in state.counters.items():
-            conn.execute(
-                """
-                INSERT INTO global_rate_limit_windows (key, window_started_at, count)
-                VALUES (?, ?, ?)
-                ON CONFLICT(key) DO UPDATE SET
-                    window_started_at = excluded.window_started_at,
-                    count = excluded.count
-                """,
-                (key, window.window_started_at, window.count),
             )
 
     def _load_usage_locked(self, conn: sqlite3.Connection, current_day: str) -> UsageState:

@@ -41,9 +41,6 @@ class SearchProductsInput(BaseModel):
             return str(value)
         return value
 
-    def normalized_cache_key_payload(self) -> dict[str, object]:
-        return self.model_dump(exclude_none=True)
-
 
 class UsageState(BaseModel):
     date: str

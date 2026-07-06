@@ -11,7 +11,7 @@ help:
 	@echo "  make sync-dev          Install runtime and dev dependencies with uv"
 	@echo "  make run               Start the server directly on $(HOST):$(PORT)"
 	@echo "  make init-env          Create .env from .env.example if it does not exist"
-	@echo "  make up                Start the local container stack on 127.0.0.1:\$${APP_PORT:-18000}"
+	@echo "  make up                Start the local container stack on 127.0.0.1:18000"
 	@echo "  make up-tunnel         Start the stack plus a named Cloudflare Tunnel"
 	@echo "  make down              Stop and remove the compose stack"
 	@echo "  make restart           Restart the local container stack"

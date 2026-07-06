@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import random
+from dataclasses import dataclass
 from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
 
@@ -14,7 +15,6 @@ from yahoo_shopping_mcp.constants import (
     YAHOO_ATTRIBUTION_URL,
     YAHOO_ITEM_SEARCH_URL,
 )
-from yahoo_shopping_mcp.errors import YahooShoppingError
 from yahoo_shopping_mcp.models import SearchProductsInput, UsageState
 from yahoo_shopping_mcp.storage import CacheStore, SQLiteStateStore
 
@@ -24,28 +24,14 @@ SENSITIVE_REQUEST_KEYS = {"appid", "api_key", "access_token", "authorization", "
 T = TypeVar("T")
 
 
-class RequestCoalescer:
-    def __init__(self) -> None:
-        self._lock = asyncio.Lock()
-        self._tasks: dict[str, asyncio.Task[None]] = {}
-
-    async def run(self, key: str, operation: Callable[[], Awaitable[None]]) -> bool:
-        async with self._lock:
-            task = self._tasks.get(key)
-            if task is None:
-                task = asyncio.create_task(operation())
-                self._tasks[key] = task
-                is_leader = True
-            else:
-                is_leader = False
-
-        try:
-            await task
-            return is_leader
-        finally:
-            if is_leader:
-                async with self._lock:
-                    self._tasks.pop(key, None)
+@dataclass(slots=True)
+class YahooShoppingError(Exception):
+    kind: str
+    message: str
+    retryable: bool = False
+    http_status: int | None = None
+    provider_code: str | None = None
+    details: dict[str, Any] | None = None
 
 
 class YahooShoppingClient:
@@ -58,7 +44,6 @@ class YahooShoppingClient:
         cache_store: CacheStore,
         warning_threshold: int,
         hard_limit: int,
-        request_coalescer: RequestCoalescer | None = None,
     ) -> None:
         self._app_id = app_id
         self._http_client = http_client
@@ -69,31 +54,13 @@ class YahooShoppingClient:
         self._cache_store = cache_store
         self._warning_threshold = warning_threshold
         self._hard_limit = hard_limit
-        self._request_coalescer = request_coalescer or RequestCoalescer()
 
     async def search(self, request: SearchProductsInput) -> dict[str, Any]:
-        cache_key_payload = request.normalized_cache_key_payload()
+        cache_key_payload = request.model_dump(exclude_none=True)
         cached_response = self._cache_store.get(cache_key_payload)
         if cached_response is not None:
             return self._build_cached_response(request, cached_response)
-
-        cache_key = self._cache_store.make_key(cache_key_payload)
-        leader_payload: dict[str, Any] | None = None
-
-        async def populate_cache() -> None:
-            nonlocal leader_payload
-            leader_payload = await self._fetch_uncached(request, cache_key_payload)
-
-        is_leader = await self._request_coalescer.run(cache_key, populate_cache)
-        if is_leader:
-            if leader_payload is None:
-                raise RuntimeError("Singleflight leader completed without a response payload.")
-            return leader_payload
-
-        cached_response = self._cache_store.get(cache_key_payload)
-        if cached_response is None:
-            raise RuntimeError("Cache entry missing after coalesced request completed.")
-        return self._build_cached_response(request, cached_response)
+        return await self._fetch_uncached(request, cache_key_payload)
 
     def _build_cached_response(self, request: SearchProductsInput, response_json: dict[str, Any]) -> dict[str, Any]:
         return self._format_response(request, response_json, self._state_store.load_usage(), from_cache=True)
