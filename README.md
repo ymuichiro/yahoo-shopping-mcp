@@ -101,6 +101,8 @@ ChatGPT 互換性のため、商品データは MCP tool result の `content[0].
 `structuredContent` / `outputSchema` だけに商品データを置くと、一部の MCP host では検索結果本文として認識されず、メタ情報だけが会話側に露出することがあります。
 そのため、このサーバーではモデルが読む本文として `content[0].text` を正とし、商品リストを先頭の `results` に置きます。
 `YAHOO_SHOPPING_MCP_TOOL_RESPONSE_MODE=chatgpt` を使うと ChatGPT 向けに `content[0].text` 優先、`structured` を使うと従来の `structuredContent` 併用に戻せます。
+本番の ChatGPT 接続では `chatgpt` を維持してください。ここを `structured` に戻すと、今回のように ChatGPT 側で検索結果を本文として拾えず、再発する可能性があります。
+この設定を変更する場合は、`outputSchema` が OFF になっていることと、`content[0].text` の `results` が実際に返ることをライブ環境で確認してから反映してください。
 
 - `results`: `id`, `title`, `url`, `text`, `metadata` を含む商品検索結果リスト
 - `display_summary`: MCP クライアントや LLM が読み取りやすい検索結果サマリー

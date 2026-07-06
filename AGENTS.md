@@ -75,6 +75,8 @@
 - `search_products` の入力契約を変える場合は、`models.py`、README、テストを同時に更新する。
 - `search_products` の返却では、商品データを MCP tool result の `content[0].text` に JSON として含めること。ChatGPT では `structuredContent` / `outputSchema` だけに置いた商品データが会話本文として認識されず、metadata だけが露出することがある。
 - `content[0].text` の JSON は、先頭キー `results` に `id`, `title`, `url`, `text`, `metadata` を持つ商品リストを置く。`metadata` には少なくとも `price`, `price_text`, `seller_name`, `image_url`, `badges` を含める。
+- `YAHOO_SHOPPING_MCP_TOOL_RESPONSE_MODE=chatgpt` は ChatGPT 向けの安全側設定として扱うこと。これを `structured` に戻すと、ChatGPT 側で検索結果本文を拾えず再発する可能性があるため、理由なく切り替えないこと。
+- `structured_output` / `structuredContent` を触ったら、`outputSchema` が OFF になっていることと、`content[0].text` の `results` が実際に返ることをライブ環境で確認してから完了にすること。
 - `debug` は返してよいが、商品情報の代替にしないこと。LLM/host が検索結果として読む主データは `results` とする。
 - 日次利用量、Yahoo 向け直列レート制御、アプリ全体のグローバルレート制限は別物として扱う。目的を混同しない。
 - このプロジェクトは認証を使わない。認証やユーザー単位制御、UI 画面を再導入しないこと。
