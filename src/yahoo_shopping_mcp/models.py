@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, PositiveInt, field_validator, model_validator
 
 
 Condition = Literal["new", "used"]
@@ -19,6 +19,11 @@ class SearchProductsInput(BaseModel):
     condition: Condition | None = None
     shipping: Shipping | None = None
     sort: Sort | None = None
+    genre_category_ids: list[PositiveInt] | None = Field(default=None, min_length=1)
+    brand_ids: list[PositiveInt] | None = Field(default=None, min_length=1)
+    seller_id: str | None = Field(default=None, min_length=1)
+    image_size: Literal[76, 106, 132, 146, 300, 600] | None = None
+    is_discounted: bool | None = None
     results: int = Field(default=20, ge=1, le=50)
     start: int = Field(default=1, ge=1)
 

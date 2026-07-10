@@ -236,6 +236,28 @@ REQUEST_CASES = [
         {"appid": "test-appid", "query": "nike", "sort": "-review_count", "results": "20", "start": "1"},
     ),
     (
+        "new_filters",
+        {
+            "query": "nike",
+            "genre_category_ids": [2498, 4744],
+            "brand_ids": [123, 456],
+            "seller_id": "store-id",
+            "image_size": 600,
+            "is_discounted": True,
+        },
+        {
+            "appid": "test-appid",
+            "query": "nike",
+            "genre_category_id": "2498,4744",
+            "brand_id": "123,456",
+            "seller_id": "store-id",
+            "image_size": "600",
+            "is_discounted": "true",
+            "results": "20",
+            "start": "1",
+        },
+    ),
+    (
         "mixed_all",
         {
             "query": "ゲーミングデスク",

@@ -102,6 +102,11 @@ def create_mcp_server(
         condition: str | None = None,
         shipping: str | None = None,
         sort: str | None = None,
+        genre_category_ids: list[int] | None = None,
+        brand_ids: list[int] | None = None,
+        seller_id: str | None = None,
+        image_size: int | None = None,
+        is_discounted: bool | None = None,
         results: int = 20,
         start: int = 1,
     ) -> Annotated[CallToolResult, SearchProductsResponse]:
@@ -125,6 +130,11 @@ def create_mcp_server(
                 condition=condition,
                 shipping=shipping,
                 sort=sort,
+                genre_category_ids=genre_category_ids,
+                brand_ids=brand_ids,
+                seller_id=seller_id,
+                image_size=image_size,
+                is_discounted=is_discounted,
                 results=results,
                 start=start,
             )

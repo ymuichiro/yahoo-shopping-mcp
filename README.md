@@ -71,10 +71,17 @@ http://127.0.0.1:8000/mcp
 - `condition`
 - `shipping`
 - `sort`
+- `genre_category_ids`（カテゴリ ID の OR 指定）
+- `brand_ids`（ブランド ID の OR 指定）
+- `seller_id`
+- `image_size`（`76`, `106`, `132`, `146`, `300`, `600`）
+- `is_discounted`
 - `results`
 - `start`
 
 `query` または `jan_code` のどちらかは必須です。
+
+`genre_category_ids` と `brand_ids` は配列で指定し、Yahoo API にはカンマ区切りの OR 条件として送信します。`preorder`、`payment`、配送日指定などの追加フィルタは公開しません。
 
 ### 呼び出し例
 

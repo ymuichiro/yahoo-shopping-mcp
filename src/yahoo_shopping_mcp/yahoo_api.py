@@ -140,6 +140,9 @@ class YahooShoppingClient:
             "start": request.start,
         }
         optional_params = request.model_dump(exclude_none=True, exclude={"results", "start"})
+        for input_name, yahoo_name in (("genre_category_ids", "genre_category_id"), ("brand_ids", "brand_id")):
+            if values := optional_params.pop(input_name, None):
+                optional_params[yahoo_name] = ",".join(map(str, values))
         params.update(optional_params)
         return params
 

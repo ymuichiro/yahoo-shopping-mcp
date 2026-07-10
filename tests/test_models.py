@@ -28,3 +28,13 @@ def test_validates_start_results_limit() -> None:
         assert "start + results must be less than or equal to 1000." in str(exc)
     else:
         raise AssertionError("ValidationError was not raised")
+
+
+def test_validates_new_filter_values() -> None:
+    for kwargs in ({"genre_category_ids": []}, {"brand_ids": [0]}, {"image_size": 500}):
+        try:
+            SearchProductsInput(query="camera", **kwargs)
+        except ValidationError:
+            pass
+        else:
+            raise AssertionError(f"ValidationError was not raised for {kwargs}")
