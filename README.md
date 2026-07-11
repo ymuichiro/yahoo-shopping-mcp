@@ -111,6 +111,17 @@ ChatGPT 互換性のため、商品データは MCP tool result の `content[0].
 本番の ChatGPT 接続では `chatgpt` を維持してください。ここを `structured` に戻すと、今回のように ChatGPT 側で検索結果を本文として拾えず、再発する可能性があります。
 この設定を変更する場合は、`outputSchema` が OFF になっていることと、`content[0].text` の `results` が実際に返ることをライブ環境で確認してから反映してください。
 
+### 商品カルーセル（MCP Apps）
+
+`search_products` は MCP Apps UI Resource `ui://yahoo-shopping/product-carousel-v1.html` に紐付いています。MCP Apps 対応ホストでは、検索結果を横スクロールの商品カードとして表示します。画像 URL だけでホストが自動的にカードを生成するわけではありません。
+
+- `content[0].text`: ChatGPT が本文として読む既存の `results` JSON（後方互換）
+- `structuredContent.products`: カルーセルとモデルが共有する商品データ
+- `resources/read`: カルーセル HTML を `text/html;profile=mcp-app` として返す
+- CSP: Yahoo 画像 CDN `https://item-shopping.c.yimg.jp` だけを許可する
+
+カルーセル表示には MCP Apps をサポートする ChatGPT ホストが必要です。対応ホストでは、`search_products` 実行後にカードの「Yahoo!ショッピングで見る」から商品ページを開けます。
+
 - `results`: `id`, `title`, `url`, `text`, `metadata` を含む商品検索結果リスト
 - `display_summary`: MCP クライアントや LLM が読み取りやすい検索結果サマリー
 - `items`: Yahoo!ショッピング API の商品 `hits` を MCP 向けに snake_case へ正規化した詳細リスト

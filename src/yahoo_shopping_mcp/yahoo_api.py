@@ -186,6 +186,7 @@ class YahooShoppingClient:
             self._format_search_result(item, request, index)
             for index, item in enumerate(items, start=1)
         ]
+        products = [self._format_product_card(item, index) for index, item in enumerate(items, start=1)]
         no_items_reason = self._build_no_items_reason(hits, items)
         warnings: list[dict[str, Any]] = []
         if usage_state.count >= self._warning_threshold:
@@ -198,6 +199,7 @@ class YahooShoppingClient:
 
         return {
             "results": results,
+            "products": products,
             "display_summary": self._build_display_summary(request, items),
             "no_items_reason": no_items_reason,
             "debug": {
@@ -379,6 +381,24 @@ class YahooShoppingClient:
                 "image_url": image.get("medium") or image.get("small"),
                 "badges": badges,
             },
+        }
+
+    @staticmethod
+    def _format_product_card(item: dict[str, Any], index: int) -> dict[str, Any]:
+        image = item.get("image") or {}
+        seller = item.get("seller") or {}
+        price = item.get("price")
+        return {
+            "id": item.get("url") or f"product-{index}",
+            "title": str(item.get("name") or f"Product {index}"),
+            "url": str(item.get("url") or ""),
+            "imageUrl": image.get("medium") or image.get("small"),
+            "price": price if isinstance(price, (int, float)) else 0,
+            "priceText": YahooShoppingClient._format_price_text(price) or "",
+            "sellerName": seller.get("name"),
+            "inStock": item.get("in_stock") is True,
+            "description": item.get("description"),
+            "features": [],
         }
 
     @staticmethod

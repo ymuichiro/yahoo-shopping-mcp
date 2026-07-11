@@ -75,6 +75,8 @@
 - `search_products` の入力契約を変える場合は、`models.py`、README、テストを同時に更新する。
 - `search_products` の返却では、商品データを MCP tool result の `content[0].text` に JSON として含めること。ChatGPT では `structuredContent` / `outputSchema` だけに置いた商品データが会話本文として認識されず、metadata だけが露出することがある。
 - `content[0].text` の JSON は、先頭キー `results` に `id`, `title`, `url`, `text`, `metadata` を持つ商品リストを置く。`metadata` には少なくとも `price`, `price_text`, `seller_name`, `image_url`, `badges` を含める。
+- 商品カード UI は `ui://yahoo-shopping/product-carousel-v1.html` の MCP Apps Resource で提供する。`search_products` の tool metadata にこの URI と `openai/outputTemplate` を置き、Resource は `text/html;profile=mcp-app` と Yahoo 画像 CDN の最小 CSP を返す。
+- `chatgpt` モードでも `content[0].text` を商品本文として維持する。カルーセル用の `structuredContent.products` は併記してよいが、本文データをこれだけに移さないこと。
 - `YAHOO_SHOPPING_MCP_TOOL_RESPONSE_MODE=chatgpt` は ChatGPT 向けの安全側設定として扱うこと。これを `structured` に戻すと、ChatGPT 側で検索結果本文を拾えず再発する可能性があるため、理由なく切り替えないこと。
 - `structured_output` / `structuredContent` を触ったら、`outputSchema` が OFF になっていることと、`content[0].text` の `results` が実際に返ることをライブ環境で確認してから完了にすること。
 - `debug` は返してよいが、商品情報の代替にしないこと。LLM/host が検索結果として読む主データは `results` とする。

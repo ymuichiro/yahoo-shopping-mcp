@@ -93,6 +93,19 @@ class SearchResultPayload(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict)
 
 
+class ProductCardPayload(BaseModel):
+    id: str
+    title: str
+    url: str
+    imageUrl: str | None = None
+    price: int | float = 0
+    priceText: str = ""
+    sellerName: str | None = None
+    inStock: bool = False
+    description: str | None = None
+    features: list[str] = Field(default_factory=list)
+
+
 class PaginationPayload(BaseModel):
     start: int
     results: int
@@ -136,6 +149,7 @@ class DebugPayload(BaseModel):
 
 class SearchProductsResponse(BaseModel):
     results: list[SearchResultPayload]
+    products: list[ProductCardPayload]
     display_summary: str
     no_items_reason: str | None = None
     debug: DebugPayload

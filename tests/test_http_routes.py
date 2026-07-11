@@ -102,12 +102,19 @@ async def test_streamable_http_tool_call_is_public(tmp_path) -> None:
                 async with ClientSession(read_stream, write_stream) as session:
                     await session.initialize()
                     tools = await session.list_tools()
+                    resources = await session.list_resources()
+                    resource = await session.read_resource("ui://yahoo-shopping/product-carousel-v1.html")
                     result = await session.call_tool("search_products", {"query": "lamp"})
 
     assert result.isError is False
     content_payload = json.loads(result.content[0].text)
     assert tools.tools[0].outputSchema is not None
     assert tools.tools[0].outputSchema["properties"]["results"]["type"] == "array"
+    assert tools.tools[0].meta["ui"]["resourceUri"] == "ui://yahoo-shopping/product-carousel-v1.html"
+    assert tools.tools[0].meta["openai/outputTemplate"] == tools.tools[0].meta["ui"]["resourceUri"]
+    assert resources.resources[0].mimeType == "text/html;profile=mcp-app"
+    assert resource.contents[0].meta["ui"]["csp"]["resourceDomains"] == ["https://item-shopping.c.yimg.jp"]
+    assert "ui/notifications/tool-result" in resource.contents[0].text
     assert result.structuredContent is not None
     assert result.structuredContent["results"] == content_payload["results"]
     assert content_payload["summary"]["total_results_available"] == 1
@@ -119,7 +126,21 @@ async def test_streamable_http_chatgpt_mode_prefers_text_only(tmp_path) -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
-            json={"totalResultsAvailable": 1, "totalResultsReturned": 1, "firstResultsPosition": 1, "hits": []},
+            json={
+                "totalResultsAvailable": 1,
+                "totalResultsReturned": 1,
+                "firstResultsPosition": 1,
+                "hits": [
+                    {
+                        "name": "Desk Lamp",
+                        "url": "https://store.shopping.yahoo.co.jp/example/desk-lamp.html",
+                        "price": 3200,
+                        "inStock": True,
+                        "image": {"medium": "https://item-shopping.c.yimg.jp/i/g/example_desk-lamp"},
+                        "seller": {"name": "Store"},
+                    }
+                ],
+            },
         )
 
     settings = Settings(
@@ -150,9 +171,9 @@ async def test_streamable_http_chatgpt_mode_prefers_text_only(tmp_path) -> None:
 
     content_payload = json.loads(result.content[0].text)
     assert tools.tools[0].outputSchema is None
-    assert result.structuredContent is None
-    assert content_payload["results"] == []
-    assert content_payload["display_summary"] == "lamp: no items returned"
+    assert result.structuredContent["products"][0]["imageUrl"] == "https://item-shopping.c.yimg.jp/i/g/example_desk-lamp"
+    assert content_payload["results"][0]["title"] == "Desk Lamp"
+    assert content_payload["display_summary"] == "lamp: 1 item returned"
     assert content_payload["summary"]["total_results_available"] == 1
 
 

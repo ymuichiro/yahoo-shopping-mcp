@@ -513,6 +513,9 @@ async def test_formats_results_and_debug_metadata(tmp_path: Path) -> None:
     assert result["results"][0]["metadata"]["seller_name"] == "Store"
     assert result["results"][0]["metadata"]["image_url"] == "https://example.com/m.jpg"
     assert result["results"][0]["metadata"]["badges"] == ["In stock", "Free shipping"]
+    assert result["products"][0]["imageUrl"] == "https://example.com/m.jpg"
+    assert result["products"][0]["sellerName"] == "Store"
+    assert result["products"][0]["inStock"] is True
     assert result["items"][0]["code"] == "store_desk-lamp"
     assert result["items"][0]["headline"] == "Bright compact lamp"
     assert result["items"][0]["price_label"]["default_price"] == 3980
@@ -774,6 +777,7 @@ async def test_streamable_http_tool_call_returns_structured_payload(tmp_path: Pa
     assert result.structuredContent is not None
     assert result.structuredContent["results"] == content_payload["results"]
     assert result.structuredContent["items"] == content_payload["items"]
+    assert result.structuredContent["products"][0]["imageUrl"] == "https://example.com/m.jpg"
     assert content_text.lstrip().startswith('{\n  "results"')
     assert content_payload["summary"]["total_results_available"] == 1
     assert content_payload["results"][0]["title"] == "Desk Lamp"

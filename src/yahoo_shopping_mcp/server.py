@@ -10,13 +10,14 @@ import httpx
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import CallToolResult, TextContent
+from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from yahoo_shopping_mcp.config import Settings, load_settings
 from yahoo_shopping_mcp.models import SearchProductsInput, SearchProductsResponse
+from yahoo_shopping_mcp.product_carousel import PRODUCT_CAROUSEL_HTML, PRODUCT_UI_META, PRODUCT_UI_URI
 from yahoo_shopping_mcp.storage import CacheStore, SQLiteStateStore, StoredRateLimitExceededError
 from yahoo_shopping_mcp.yahoo_api import YahooShoppingClient, YahooShoppingError
 
@@ -92,7 +93,29 @@ def create_mcp_server(
     async def healthz(_request: Request):
         return JSONResponse({"ok": True})
 
-    @mcp.tool(structured_output=structured_output_enabled)
+    @mcp.resource(
+        PRODUCT_UI_URI,
+        name="yahoo-product-carousel",
+        title="Yahoo!ショッピング商品カルーセル",
+        mime_type="text/html;profile=mcp-app",
+        meta=PRODUCT_UI_META,
+    )
+    def product_carousel() -> str:
+        return PRODUCT_CAROUSEL_HTML
+
+    @mcp.tool(
+        title="Yahoo!ショッピング商品検索",
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=True),
+        meta={
+            "ui": {"resourceUri": PRODUCT_UI_URI, "visibility": ["model", "app"]},
+            "ui/resourceUri": PRODUCT_UI_URI,
+            "openai/outputTemplate": PRODUCT_UI_URI,
+            "openai/widgetAccessible": True,
+            "openai/toolInvocation/invoking": "Yahoo!ショッピングを検索しています…",
+            "openai/toolInvocation/invoked": "商品を表示しました。",
+        },
+        structured_output=structured_output_enabled,
+    )
     async def search_products(
         query: str | None = None,
         jan_code: str | int | None = None,
@@ -151,6 +174,11 @@ def create_mcp_server(
             response_payload["usage"]["global_rate_limit"] = rate_limit.model_dump()
             validated = SearchProductsResponse.model_validate(response_payload)
             content_payload = validated.model_dump(mode="json")
+            additional_images = {
+                product["id"]: [item["ex_image"]["url"]]
+                for product, item in zip(content_payload["products"], content_payload["items"], strict=True)
+                if (item.get("ex_image") or {}).get("url")
+            }
             result = CallToolResult(
                 content=[
                     TextContent(
@@ -171,9 +199,14 @@ def create_mcp_server(
                     )
                 ],
                 structuredContent=content_payload,
+                _meta={"additionalImagesByProductId": additional_images},
             )
             if resolved_settings.tool_response_mode == "chatgpt":
-                return CallToolResult(content=result.content)
+                return CallToolResult(
+                    content=result.content,
+                    structuredContent={"products": content_payload["products"]},
+                    _meta=result.meta,
+                )
             return result
         except ValidationError as exc:
             first_error = exc.errors()[0]
