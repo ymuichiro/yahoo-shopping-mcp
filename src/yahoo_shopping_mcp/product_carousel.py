@@ -35,6 +35,14 @@ PRODUCT_CAROUSEL_HTML = """<!doctype html>
   <div id="products" aria-live="polite"></div>
   <script>
     const container = document.getElementById("products");
+    let requestId = 1;
+    const pending = new Map();
+    const notify = (method, params = {}) => window.parent.postMessage({ jsonrpc: "2.0", method, params }, "*");
+    const request = (method, params) => new Promise((resolve, reject) => {
+      const id = requestId++;
+      pending.set(id, { resolve, reject });
+      window.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
+    });
     const productUrl = (value) => {
       try { const url = new URL(value); return url.protocol === "https:" && url.hostname === "store.shopping.yahoo.co.jp" ? url.href : null; }
       catch { return null; }
@@ -58,8 +66,14 @@ PRODUCT_CAROUSEL_HTML = """<!doctype html>
     };
     const output = window.openai?.toolOutput; if (output?.products) showProducts(output.products);
     window.addEventListener("message", (event) => {
-      if (event.source === window.parent && event.data?.jsonrpc === "2.0" && event.data?.method === "ui/notifications/tool-result") showProducts(event.data.params?.structuredContent?.products);
+      if (event.source !== window.parent || event.data?.jsonrpc !== "2.0") return;
+      const response = pending.get(event.data.id);
+      if (response) { pending.delete(event.data.id); event.data.error ? response.reject(event.data.error) : response.resolve(event.data.result); return; }
+      if (event.data.method === "ui/notifications/tool-result") showProducts(event.data.params?.structuredContent?.products);
     });
+    request("initialize", { protocolVersion: "2026-01-26", capabilities: {}, clientInfo: { name: "yahoo-product-carousel", version: "1.0.0" } })
+      .then(() => notify("ui/notifications/initialized"))
+      .catch(() => {});
   </script>
 </body>
 </html>"""

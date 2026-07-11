@@ -115,6 +115,7 @@ async def test_streamable_http_tool_call_is_public(tmp_path) -> None:
     assert resources.resources[0].mimeType == "text/html;profile=mcp-app"
     assert resource.contents[0].meta["ui"]["csp"]["resourceDomains"] == ["https://item-shopping.c.yimg.jp"]
     assert "ui/notifications/tool-result" in resource.contents[0].text
+    assert "ui/notifications/initialized" in resource.contents[0].text
     assert result.structuredContent is not None
     assert result.structuredContent["results"] == content_payload["results"]
     assert content_payload["summary"]["total_results_available"] == 1
