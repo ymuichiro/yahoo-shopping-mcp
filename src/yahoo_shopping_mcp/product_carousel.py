@@ -1,4 +1,4 @@
-PRODUCT_UI_URI = "ui://yahoo-shopping/product-carousel-v1.html"
+PRODUCT_UI_URI = "ui://yahoo-shopping/product-carousel-v3.html"
 PRODUCT_UI_META = {
     "ui": {
         "prefersBorder": False,
@@ -6,11 +6,6 @@ PRODUCT_UI_META = {
             "resourceDomains": ["https://item-shopping.c.yimg.jp"],
             "connectDomains": [],
         },
-    },
-    "openai/widgetPrefersBorder": False,
-    "openai/widgetCSP": {
-        "resource_domains": ["https://item-shopping.c.yimg.jp"],
-        "connect_domains": [],
     },
 }
 
@@ -22,7 +17,11 @@ PRODUCT_CAROUSEL_HTML = """<!doctype html>
   <title>Yahoo!ショッピング商品</title>
   <style>
     :root { color: #202124; font: 14px/1.45 system-ui, sans-serif; }
-    #products { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 75%); gap: 12px; overflow-x: auto; padding: 4px 4px 16px; scroll-snap-type: x mandatory; }
+    html, body { margin: 0; overflow: hidden; }
+    #status { margin: 0 4px 6px; color: #5f6368; }
+    #products { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 75%); gap: 12px; overflow-x: auto; overflow-y: hidden; padding: 4px 4px 10px; scroll-snap-type: x mandatory; scrollbar-width: thin; }
+    #products::-webkit-scrollbar { height: 10px; }
+    #products::-webkit-scrollbar-thumb { border-radius: 5px; background: #9aa0a6; }
     .card { scroll-snap-align: start; overflow: hidden; border: 1px solid #d9dce1; border-radius: 16px; background: #fff; }
     .image { aspect-ratio: 1; display: grid; place-items: center; background: #f5f6f7; color: #667085; }
     .image img { width: 100%; height: 100%; object-fit: contain; }
@@ -32,8 +31,10 @@ PRODUCT_CAROUSEL_HTML = """<!doctype html>
   </style>
 </head>
 <body>
-  <div id="products" aria-live="polite"></div>
+  <div id="status" aria-live="polite">商品を読み込んでいます…</div>
+  <div id="products"></div>
   <script>
+    const status = document.getElementById("status");
     const container = document.getElementById("products");
     let requestId = 1;
     const pending = new Map();
@@ -43,15 +44,18 @@ PRODUCT_CAROUSEL_HTML = """<!doctype html>
       pending.set(id, { resolve, reject });
       window.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
     });
+    const showError = (message) => { status.textContent = message; container.replaceChildren(); };
     const productUrl = (value) => {
       try { const url = new URL(value); return url.protocol === "https:" && url.hostname === "store.shopping.yahoo.co.jp" ? url.href : null; }
       catch { return null; }
     };
     const showProducts = (products = []) => {
+      if (!products.length) { showError("該当する商品はありません。"); return; }
+      status.textContent = `${products.length}件の商品`;
       container.replaceChildren(...products.map((product) => {
         const card = document.createElement("article"); card.className = "card";
         const image = document.createElement("div"); image.className = "image";
-        if (product.imageUrl) { const img = document.createElement("img"); img.src = product.imageUrl; img.alt = ""; img.loading = "lazy"; img.onerror = () => { img.remove(); image.textContent = "画像なし"; }; image.append(img); }
+        if (product.imageUrl) { const img = document.createElement("img"); img.src = product.imageUrl; img.alt = product.title || "商品画像"; img.onerror = () => { img.remove(); image.textContent = "画像なし"; }; image.append(img); }
         else image.textContent = "画像なし";
         const body = document.createElement("div"); body.className = "body";
         const title = document.createElement("h3"); title.textContent = product.title;
@@ -60,20 +64,27 @@ PRODUCT_CAROUSEL_HTML = """<!doctype html>
         const stock = document.createElement("small"); stock.className = "stock"; stock.textContent = product.inStock ? "在庫あり" : "在庫情報なし";
         body.append(title, price, seller, stock);
         const href = productUrl(product.url);
-        if (href) { const button = document.createElement("button"); button.type = "button"; button.textContent = "Yahoo!ショッピングで見る"; button.addEventListener("click", () => window.openai?.openExternal ? window.openai.openExternal({ href }) : window.open(href, "_blank", "noopener")); body.append(button); }
+        if (href) { const button = document.createElement("button"); button.type = "button"; button.textContent = "Yahoo!ショッピングで見る"; button.addEventListener("click", () => request("ui/open-link", { url: href }).catch(() => showError("商品ページを開けませんでした。"))); body.append(button); }
         card.append(image, body); return card;
       }));
     };
-    const output = window.openai?.toolOutput; if (output?.products) showProducts(output.products);
     window.addEventListener("message", (event) => {
       if (event.source !== window.parent || event.data?.jsonrpc !== "2.0") return;
       const response = pending.get(event.data.id);
       if (response) { pending.delete(event.data.id); event.data.error ? response.reject(event.data.error) : response.resolve(event.data.result); return; }
       if (event.data.method === "ui/notifications/tool-result") showProducts(event.data.params?.structuredContent?.products);
+      if (event.data.method === "ui/resource-teardown" && event.data.id !== undefined) window.parent.postMessage({ jsonrpc: "2.0", id: event.data.id, result: {} }, "*");
     });
-    request("initialize", { protocolVersion: "2026-01-26", capabilities: {}, clientInfo: { name: "yahoo-product-carousel", version: "1.0.0" } })
-      .then(() => notify("ui/notifications/initialized"))
-      .catch(() => {});
+    request("ui/initialize", {
+      protocolVersion: "2026-01-26",
+      appCapabilities: {},
+      appInfo: { name: "yahoo-product-carousel", version: "3.0.0" }
+    }).then(() => {
+      notify("ui/notifications/initialized");
+      const resize = () => notify("ui/notifications/size-changed", { height: document.documentElement.scrollHeight });
+      new ResizeObserver(() => requestAnimationFrame(resize)).observe(document.documentElement);
+      resize();
+    }).catch(() => showError("商品カルーセルを初期化できませんでした。"));
   </script>
 </body>
 </html>"""

@@ -103,7 +103,10 @@ class ProductCardPayload(BaseModel):
     sellerName: str | None = None
     inStock: bool = False
     description: str | None = None
-    features: list[str] = Field(default_factory=list)
+
+
+class ProductCarouselResponse(BaseModel):
+    products: list[ProductCardPayload]
 
 
 class PaginationPayload(BaseModel):

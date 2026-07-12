@@ -104,23 +104,19 @@ http://127.0.0.1:8000/mcp
 
 主な出力:
 
-ChatGPT 互換性のため、商品データは MCP tool result の `content[0].text` に JSON として返します。
-`structuredContent` / `outputSchema` だけに商品データを置くと、一部の MCP host では検索結果本文として認識されず、メタ情報だけが会話側に露出することがあります。
-そのため、このサーバーではモデルが読む本文として `content[0].text` を正とし、商品リストを先頭の `results` に置きます。
-`YAHOO_SHOPPING_MCP_TOOL_RESPONSE_MODE=chatgpt` を使うと ChatGPT 向けに `content[0].text` 優先、`structured` を使うと従来の `structuredContent` 併用に戻せます。
-本番の ChatGPT 接続では `chatgpt` を維持してください。ここを `structured` に戻すと、今回のように ChatGPT 側で検索結果を本文として拾えず、再発する可能性があります。
-この設定を変更する場合は、`outputSchema` が OFF になっていることと、`content[0].text` の `results` が実際に返ることをライブ環境で確認してから反映してください。
+ChatGPT が読む商品データは MCP tool result の `content[0].text` に JSON として返し、先頭キーを `results` にします。
+カルーセル用データは `structuredContent.products` に返し、tool の `outputSchema` も同じ `{ products: [...] }` に限定します。
 
 ### 商品カルーセル（MCP Apps）
 
-`search_products` は MCP Apps UI Resource `ui://yahoo-shopping/product-carousel-v1.html` に紐付いています。MCP Apps 対応ホストでは、検索結果を横スクロールの商品カードとして表示します。画像 URL だけでホストが自動的にカードを生成するわけではありません。
+`search_products` は MCP Apps UI Resource `ui://yahoo-shopping/product-carousel-v3.html` に紐付いています。ChatGPT では、検索結果を横スクロールの商品カードとして表示します。画像は Yahoo API の `exImage` を優先し、なければ `image.medium` / `image.small` を使います。
 
-- `content[0].text`: ChatGPT が本文として読む既存の `results` JSON（後方互換）
-- `structuredContent.products`: カルーセルとモデルが共有する商品データ
+- `content[0].text`: ChatGPT が本文として読む `results` JSON
+- `structuredContent.products`: カルーセルが描画する商品データ
 - `resources/read`: カルーセル HTML を `text/html;profile=mcp-app` として返す
 - CSP: Yahoo 画像 CDN `https://item-shopping.c.yimg.jp` だけを許可する
 
-カルーセル表示には MCP Apps をサポートする ChatGPT ホストが必要です。対応ホストでは、`search_products` 実行後にカードの「Yahoo!ショッピングで見る」から商品ページを開けます。
+カルーセルは MCP Apps の `ui/*` bridge で ChatGPT と通信します。`search_products` 実行後にカードの「Yahoo!ショッピングで見る」から商品ページを開けます。
 
 - `results`: `id`, `title`, `url`, `text`, `metadata` を含む商品検索結果リスト
 - `display_summary`: MCP クライアントや LLM が読み取りやすい検索結果サマリー
@@ -215,7 +211,6 @@ make init-env
 - `YAHOO_SHOPPING_MCP_GLOBAL_WINDOW_SECONDS`
 - `YAHOO_SHOPPING_MCP_CACHE_TTL_SECONDS`
 - `YAHOO_SHOPPING_MCP_BASE_RATE_SECONDS`
-- `YAHOO_SHOPPING_MCP_TOOL_RESPONSE_MODE`
 
 ローカル compose 起動:
 
@@ -258,7 +253,6 @@ ALLOWED_HOSTS=localhost:*,127.0.0.1:*,non-official-yahoo-shopping-mcp.notelligen
 ALLOWED_ORIGINS=http://localhost:18000,http://127.0.0.1:18000,https://non-official-yahoo-shopping-mcp.notelligent.app,https://chatgpt.com,https://chat.openai.com
 YAHOO_SHOPPING_MCP_GLOBAL_RATE_LIMIT=60
 YAHOO_SHOPPING_MCP_GLOBAL_WINDOW_SECONDS=60
-YAHOO_SHOPPING_MCP_TOOL_RESPONSE_MODE=chatgpt
 ```
 
 ## 開発

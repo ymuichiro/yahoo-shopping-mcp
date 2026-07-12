@@ -103,27 +103,32 @@ async def test_streamable_http_tool_call_is_public(tmp_path) -> None:
                     await session.initialize()
                     tools = await session.list_tools()
                     resources = await session.list_resources()
-                    resource = await session.read_resource("ui://yahoo-shopping/product-carousel-v1.html")
+                    resource = await session.read_resource("ui://yahoo-shopping/product-carousel-v3.html")
                     result = await session.call_tool("search_products", {"query": "lamp"})
 
     assert result.isError is False
     content_payload = json.loads(result.content[0].text)
     assert tools.tools[0].outputSchema is not None
-    assert tools.tools[0].outputSchema["properties"]["results"]["type"] == "array"
-    assert tools.tools[0].meta["ui"]["resourceUri"] == "ui://yahoo-shopping/product-carousel-v1.html"
-    assert tools.tools[0].meta["openai/outputTemplate"] == tools.tools[0].meta["ui"]["resourceUri"]
+    assert list(tools.tools[0].outputSchema["properties"]) == ["products"]
+    assert tools.tools[0].meta["ui"]["resourceUri"] == "ui://yahoo-shopping/product-carousel-v3.html"
+    assert "openai/outputTemplate" not in tools.tools[0].meta
     assert resources.resources[0].mimeType == "text/html;profile=mcp-app"
     assert resource.contents[0].meta["ui"]["csp"]["resourceDomains"] == ["https://item-shopping.c.yimg.jp"]
     assert "ui/notifications/tool-result" in resource.contents[0].text
     assert "ui/notifications/initialized" in resource.contents[0].text
+    assert 'request("ui/initialize"' in resource.contents[0].text
+    assert 'request("initialize"' not in resource.contents[0].text
+    assert "window.openai" not in resource.contents[0].text
+    assert "overflow-y: hidden" in resource.contents[0].text
+    assert "件の商品" in resource.contents[0].text
     assert result.structuredContent is not None
-    assert result.structuredContent["results"] == content_payload["results"]
+    assert result.structuredContent == {"products": []}
     assert content_payload["summary"]["total_results_available"] == 1
     assert content_payload["no_items_reason"] == "upstream_hits_empty"
 
 
 @pytest.mark.anyio
-async def test_streamable_http_chatgpt_mode_prefers_text_only(tmp_path) -> None:
+async def test_streamable_http_returns_text_and_carousel_data(tmp_path) -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
@@ -150,7 +155,6 @@ async def test_streamable_http_chatgpt_mode_prefers_text_only(tmp_path) -> None:
         port=8000,
         state_dir=tmp_path / "state",
         cache_dir=tmp_path / "cache",
-        tool_response_mode="chatgpt",
     )
     app = create_mcp_server(
         settings,
@@ -171,7 +175,7 @@ async def test_streamable_http_chatgpt_mode_prefers_text_only(tmp_path) -> None:
                     result = await session.call_tool("search_products", {"query": "lamp"})
 
     content_payload = json.loads(result.content[0].text)
-    assert tools.tools[0].outputSchema is None
+    assert list(tools.tools[0].outputSchema["properties"]) == ["products"]
     assert result.structuredContent["products"][0]["imageUrl"] == "https://item-shopping.c.yimg.jp/i/g/example_desk-lamp"
     assert content_payload["results"][0]["title"] == "Desk Lamp"
     assert content_payload["display_summary"] == "lamp: 1 item returned"
@@ -280,7 +284,7 @@ async def test_streamable_http_tool_call_works_with_internal_http_client(
     content_payload = json.loads(result.content[0].text)
     assert tools.tools[0].outputSchema is not None
     assert result.structuredContent is not None
-    assert result.structuredContent["results"][0]["title"] == "Desk Lamp"
+    assert result.structuredContent["products"][0]["title"] == "Desk Lamp"
     assert content_payload["results"][0]["title"] == "Desk Lamp"
     assert content_payload["results"][0]["metadata"]["price"] == 3200
 

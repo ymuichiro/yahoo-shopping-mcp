@@ -16,10 +16,35 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from yahoo_shopping_mcp.config import Settings, load_settings
-from yahoo_shopping_mcp.models import SearchProductsInput, SearchProductsResponse
+from yahoo_shopping_mcp.models import ProductCarouselResponse, SearchProductsInput, SearchProductsResponse
 from yahoo_shopping_mcp.product_carousel import PRODUCT_CAROUSEL_HTML, PRODUCT_UI_META, PRODUCT_UI_URI
 from yahoo_shopping_mcp.storage import CacheStore, SQLiteStateStore, StoredRateLimitExceededError
 from yahoo_shopping_mcp.yahoo_api import YahooShoppingClient, YahooShoppingError
+
+
+def _tool_error(
+    kind: str,
+    message: str,
+    *,
+    retryable: bool,
+    http_status: int | None,
+    provider_code: str | None,
+    details: dict[str, object],
+) -> ToolError:
+    return ToolError(
+        json.dumps(
+            {
+                "kind": kind,
+                "message": message,
+                "retryable": retryable,
+                "http_status": http_status,
+                "provider_code": provider_code,
+                "details": details,
+            },
+            ensure_ascii=False,
+        )
+    )
+
 
 def create_mcp_server(
     settings: Settings | None = None,
@@ -29,7 +54,6 @@ def create_mcp_server(
     resolved_settings = settings or load_settings()
     for logger_name in ("httpx", "httpcore"):
         logging.getLogger(logger_name).setLevel(logging.WARNING)
-    structured_output_enabled = resolved_settings.tool_response_mode != "chatgpt"
     transport_security = (
         TransportSecuritySettings(
             enable_dns_rebinding_protection=True,
@@ -48,7 +72,6 @@ def create_mcp_server(
         try:
             state_store = SQLiteStateStore(resolved_settings.state_dir)
             yield {
-                "settings": resolved_settings,
                 "http_client": request_http_client,
                 "state_store": state_store,
                 "cache_store": CacheStore(resolved_settings.cache_dir, resolved_settings.cache_ttl_seconds),
@@ -107,14 +130,11 @@ def create_mcp_server(
         title="Yahoo!ショッピング商品検索",
         annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=True),
         meta={
-            "ui": {"resourceUri": PRODUCT_UI_URI, "visibility": ["model", "app"]},
-            "ui/resourceUri": PRODUCT_UI_URI,
-            "openai/outputTemplate": PRODUCT_UI_URI,
-            "openai/widgetAccessible": True,
+            "ui": {"resourceUri": PRODUCT_UI_URI, "visibility": ["model"]},
             "openai/toolInvocation/invoking": "Yahoo!ショッピングを検索しています…",
             "openai/toolInvocation/invoked": "商品を表示しました。",
         },
-        structured_output=structured_output_enabled,
+        structured_output=True,
     )
     async def search_products(
         query: str | None = None,
@@ -132,7 +152,7 @@ def create_mcp_server(
         is_discounted: bool | None = None,
         results: int = 20,
         start: int = 1,
-    ) -> Annotated[CallToolResult, SearchProductsResponse]:
+    ) -> Annotated[CallToolResult, ProductCarouselResponse]:
         """Search Yahoo! Shopping products with global rate limiting, retry, caching, and attribution metadata."""
 
         try:
@@ -174,12 +194,7 @@ def create_mcp_server(
             response_payload["usage"]["global_rate_limit"] = rate_limit.model_dump()
             validated = SearchProductsResponse.model_validate(response_payload)
             content_payload = validated.model_dump(mode="json")
-            additional_images = {
-                product["id"]: [item["ex_image"]["url"]]
-                for product, item in zip(content_payload["products"], content_payload["items"], strict=True)
-                if (item.get("ex_image") or {}).get("url")
-            }
-            result = CallToolResult(
+            return CallToolResult(
                 content=[
                     TextContent(
                         type="text",
@@ -198,58 +213,35 @@ def create_mcp_server(
                         ),
                     )
                 ],
-                structuredContent=content_payload,
-                _meta={"additionalImagesByProductId": additional_images},
+                structuredContent={"products": content_payload["products"]},
             )
-            if resolved_settings.tool_response_mode == "chatgpt":
-                return CallToolResult(
-                    content=result.content,
-                    structuredContent={"products": content_payload["products"]},
-                    _meta=result.meta,
-                )
-            return result
         except ValidationError as exc:
             first_error = exc.errors()[0]
-            raise ToolError(
-                json.dumps(
-                    {
-                        "kind": "validation_error",
-                        "message": first_error["msg"],
-                        "retryable": False,
-                        "http_status": None,
-                        "provider_code": None,
-                        "details": {"errors": exc.errors()},
-                    },
-                    ensure_ascii=False,
-                )
+            raise _tool_error(
+                "validation_error",
+                first_error["msg"],
+                retryable=False,
+                http_status=None,
+                provider_code=None,
+                details={"errors": exc.errors()},
             ) from exc
         except StoredRateLimitExceededError as exc:
-            raise ToolError(
-                json.dumps(
-                    {
-                        "kind": "global_rate_limited",
-                        "message": f"Global rate limit exceeded. Retry after {exc.retry_after} seconds.",
-                        "retryable": True,
-                        "http_status": 429,
-                        "provider_code": None,
-                        "details": {},
-                    },
-                    ensure_ascii=False,
-                )
+            raise _tool_error(
+                "global_rate_limited",
+                f"Global rate limit exceeded. Retry after {exc.retry_after} seconds.",
+                retryable=True,
+                http_status=429,
+                provider_code=None,
+                details={},
             ) from exc
         except YahooShoppingError as exc:
-            raise ToolError(
-                json.dumps(
-                    {
-                        "kind": exc.kind,
-                        "message": exc.message,
-                        "retryable": exc.retryable,
-                        "http_status": exc.http_status,
-                        "provider_code": exc.provider_code,
-                        "details": exc.details or {},
-                    },
-                    ensure_ascii=False,
-                )
+            raise _tool_error(
+                exc.kind,
+                exc.message,
+                retryable=exc.retryable,
+                http_status=exc.http_status,
+                provider_code=exc.provider_code,
+                details=exc.details or {},
             ) from exc
 
     return mcp

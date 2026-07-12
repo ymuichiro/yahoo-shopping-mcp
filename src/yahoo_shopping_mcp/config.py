@@ -31,7 +31,6 @@ class Settings:
     global_window_seconds: int = DEFAULT_GLOBAL_WINDOW_SECONDS
     allowed_hosts: list[str] | None = None
     allowed_origins: list[str] | None = None
-    tool_response_mode: str = "structured"
     state_dir: Path = Path(".local") / STATE_DIRNAME
     cache_dir: Path = Path(".local") / CACHE_DIRNAME
 
@@ -61,10 +60,6 @@ def load_settings() -> Settings:
     allowed_hosts = [item.strip() for item in allowed_hosts_raw.split(",") if item.strip()] or None
     allowed_origins_raw = (os.getenv("YAHOO_SHOPPING_MCP_ALLOWED_ORIGINS") or "").strip()
     allowed_origins = [item.strip() for item in allowed_origins_raw.split(",") if item.strip()] or None
-    tool_response_mode = (os.getenv("YAHOO_SHOPPING_MCP_TOOL_RESPONSE_MODE") or "structured").strip().lower()
-    if tool_response_mode not in {"structured", "chatgpt"}:
-        raise RuntimeError("YAHOO_SHOPPING_MCP_TOOL_RESPONSE_MODE must be one of: structured, chatgpt.")
-
     return Settings(
         app_id=app_id,
         host=host,
@@ -77,7 +72,6 @@ def load_settings() -> Settings:
         global_window_seconds=global_window_seconds,
         allowed_hosts=allowed_hosts,
         allowed_origins=allowed_origins,
-        tool_response_mode=tool_response_mode,
         state_dir=base_dir / STATE_DIRNAME,
         cache_dir=base_dir / CACHE_DIRNAME,
     )

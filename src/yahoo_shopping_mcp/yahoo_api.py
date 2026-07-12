@@ -5,8 +5,7 @@ import json
 import logging
 import random
 from dataclasses import dataclass
-from collections.abc import Awaitable, Callable
-from typing import Any, TypeVar
+from typing import Any
 
 import httpx
 
@@ -21,7 +20,6 @@ from yahoo_shopping_mcp.storage import CacheStore, SQLiteStateStore
 logger = logging.getLogger(__name__)
 REDACTED_VALUE = "[REDACTED]"
 SENSITIVE_REQUEST_KEYS = {"appid", "api_key", "access_token", "authorization", "token"}
-T = TypeVar("T")
 
 
 @dataclass(slots=True)
@@ -59,25 +57,17 @@ class YahooShoppingClient:
         cache_key_payload = request.model_dump(exclude_none=True)
         cached_response = self._cache_store.get(cache_key_payload)
         if cached_response is not None:
-            return self._build_cached_response(request, cached_response)
-        return await self._fetch_uncached(request, cache_key_payload)
+            return self._format_response(request, cached_response, self._state_store.load_usage(), from_cache=True)
 
-    def _build_cached_response(self, request: SearchProductsInput, response_json: dict[str, Any]) -> dict[str, Any]:
-        return self._format_response(request, response_json, self._state_store.load_usage(), from_cache=True)
-
-    async def _fetch_uncached(self, request: SearchProductsInput, cache_key_payload: dict[str, object]) -> dict[str, Any]:
-        response_json, usage_state = await self._run_with_rate_limit(lambda: self._fetch_with_usage_accounting(request))
-        self._cache_store.set(cache_key_payload, response_json)
-        return self._format_response(request, response_json, usage_state, from_cache=False)
-
-    async def _run_with_rate_limit(self, operation: Callable[[], Awaitable[T]]) -> T:
         async with self._rate_lock:
             now = asyncio.get_running_loop().time()
             elapsed = now - self._last_started_at
             if self._last_started_at and elapsed < self._min_interval_seconds:
                 await asyncio.sleep(self._min_interval_seconds - elapsed)
             self._last_started_at = asyncio.get_running_loop().time()
-            return await operation()
+            response_json, usage_state = await self._fetch_with_usage_accounting(request)
+        self._cache_store.set(cache_key_payload, response_json)
+        return self._format_response(request, response_json, usage_state, from_cache=False)
 
     async def _fetch_with_usage_accounting(
         self,
@@ -351,6 +341,7 @@ class YahooShoppingClient:
     @staticmethod
     def _format_search_result(item: dict[str, Any], request: SearchProductsInput, index: int) -> dict[str, Any]:
         image = item.get("image") or {}
+        ex_image = item.get("ex_image") or {}
         seller = item.get("seller") or {}
         title = item.get("name") or f"Product {index}"
         url = item.get("url") or ""
@@ -378,7 +369,7 @@ class YahooShoppingClient:
                 "price": item.get("price"),
                 "price_text": price_text or None,
                 "seller_name": seller_name,
-                "image_url": image.get("medium") or image.get("small"),
+                "image_url": ex_image.get("url") or image.get("medium") or image.get("small"),
                 "badges": badges,
             },
         }
@@ -386,19 +377,19 @@ class YahooShoppingClient:
     @staticmethod
     def _format_product_card(item: dict[str, Any], index: int) -> dict[str, Any]:
         image = item.get("image") or {}
+        ex_image = item.get("ex_image") or {}
         seller = item.get("seller") or {}
         price = item.get("price")
         return {
             "id": item.get("url") or f"product-{index}",
             "title": str(item.get("name") or f"Product {index}"),
             "url": str(item.get("url") or ""),
-            "imageUrl": image.get("medium") or image.get("small"),
+            "imageUrl": ex_image.get("url") or image.get("medium") or image.get("small"),
             "price": price if isinstance(price, (int, float)) else 0,
             "priceText": YahooShoppingClient._format_price_text(price) or "",
             "sellerName": seller.get("name"),
             "inStock": item.get("in_stock") is True,
             "description": item.get("description"),
-            "features": [],
         }
 
     @staticmethod

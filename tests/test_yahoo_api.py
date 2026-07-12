@@ -511,9 +511,9 @@ async def test_formats_results_and_debug_metadata(tmp_path: Path) -> None:
     assert result["results"][0]["metadata"]["price"] == 3200
     assert result["results"][0]["metadata"]["price_text"] == "JPY 3,200"
     assert result["results"][0]["metadata"]["seller_name"] == "Store"
-    assert result["results"][0]["metadata"]["image_url"] == "https://example.com/m.jpg"
+    assert result["results"][0]["metadata"]["image_url"] == "https://example.com/ex.jpg"
     assert result["results"][0]["metadata"]["badges"] == ["In stock", "Free shipping"]
-    assert result["products"][0]["imageUrl"] == "https://example.com/m.jpg"
+    assert result["products"][0]["imageUrl"] == "https://example.com/ex.jpg"
     assert result["products"][0]["sellerName"] == "Store"
     assert result["products"][0]["inStock"] is True
     assert result["items"][0]["code"] == "store_desk-lamp"
@@ -773,11 +773,9 @@ async def test_streamable_http_tool_call_returns_structured_payload(tmp_path: Pa
     content_payload = json.loads(result.content[0].text)
     content_text = result.content[0].text
     assert tools.tools[0].outputSchema is not None
-    assert tools.tools[0].outputSchema["properties"]["items"]["type"] == "array"
+    assert list(tools.tools[0].outputSchema["properties"]) == ["products"]
     assert result.structuredContent is not None
-    assert result.structuredContent["results"] == content_payload["results"]
-    assert result.structuredContent["items"] == content_payload["items"]
-    assert result.structuredContent["products"][0]["imageUrl"] == "https://example.com/m.jpg"
+    assert result.structuredContent["products"][0]["imageUrl"] == "https://example.com/ex.jpg"
     assert content_text.lstrip().startswith('{\n  "results"')
     assert content_payload["summary"]["total_results_available"] == 1
     assert content_payload["results"][0]["title"] == "Desk Lamp"
