@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import multiprocessing as mp
 import sqlite3
 import time
@@ -308,30 +307,6 @@ async def test_maps_request_parameters_across_query_patterns(tmp_path: Path, pay
         await client._http_client.aclose()
 
     assert captured["params"] == expected_params
-
-
-@pytest.mark.anyio
-async def test_upstream_request_log_redacts_appid(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    def handler(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200,
-            json={"totalResultsAvailable": 1, "totalResultsReturned": 1, "firstResultsPosition": 1, "hits": []},
-        )
-
-    caplog.set_level(logging.INFO, logger="yahoo_shopping_mcp.yahoo_api")
-    client = build_client(tmp_path, handler, rate_seconds=0.0)
-
-    try:
-        await client.search(SearchProductsInput(query="nike", price_from=1000, sort="-score"))
-    finally:
-        await client._http_client.aclose()
-
-    log_text = caplog.text
-    assert "[REDACTED]" in log_text
-    assert "test-appid" not in log_text
-    assert '"query": "nike"' in log_text
-    assert '"price_from": 1000' in log_text
-    assert '"sort": "-score"' in log_text
 
 
 @pytest.mark.anyio

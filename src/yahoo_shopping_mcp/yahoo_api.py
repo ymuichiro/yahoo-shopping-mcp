@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import logging
 import random
 from dataclasses import dataclass
 from typing import Any
@@ -16,11 +14,6 @@ from yahoo_shopping_mcp.constants import (
 )
 from yahoo_shopping_mcp.models import SearchProductsInput, UsageState
 from yahoo_shopping_mcp.storage import CacheStore, SQLiteStateStore
-
-logger = logging.getLogger(__name__)
-REDACTED_VALUE = "[REDACTED]"
-SENSITIVE_REQUEST_KEYS = {"appid", "api_key", "access_token", "authorization", "token"}
-
 
 @dataclass(slots=True)
 class YahooShoppingError(Exception):
@@ -90,7 +83,6 @@ class YahooShoppingClient:
         server_retry_budget = 1
 
         for attempt in range(retries_for_rate_limit + 1):
-            self._log_upstream_request(params, attempt)
             try:
                 response = await self._http_client.get(YAHOO_ITEM_SEARCH_URL, params=params)
             except httpx.HTTPError as exc:
@@ -101,7 +93,6 @@ class YahooShoppingClient:
                     details={"reason": str(exc)},
                 ) from exc
 
-            self._log_upstream_response(response.status_code, attempt)
             if response.status_code == 429 and attempt < retries_for_rate_limit:
                 await asyncio.sleep((2**attempt) + random.uniform(0.0, 0.25))
                 continue
@@ -135,30 +126,6 @@ class YahooShoppingClient:
                 optional_params[yahoo_name] = ",".join(map(str, values))
         params.update(optional_params)
         return params
-
-    @staticmethod
-    def _redact_request_params(params: dict[str, Any]) -> dict[str, Any]:
-        return {
-            key: REDACTED_VALUE if key.lower() in SENSITIVE_REQUEST_KEYS else value
-            for key, value in params.items()
-        }
-
-    def _log_upstream_request(self, params: dict[str, Any], attempt: int) -> None:
-        redacted_params = self._redact_request_params(params)
-        logger.info(
-            "Yahoo Shopping API request attempt=%s method=GET url=%s params=%s body=None",
-            attempt + 1,
-            YAHOO_ITEM_SEARCH_URL,
-            json.dumps(redacted_params, ensure_ascii=False, sort_keys=True),
-        )
-
-    def _log_upstream_response(self, status_code: int, attempt: int) -> None:
-        logger.info(
-            "Yahoo Shopping API response attempt=%s method=GET url=%s status=%s",
-            attempt + 1,
-            YAHOO_ITEM_SEARCH_URL,
-            status_code,
-        )
 
     def _format_response(
         self,
