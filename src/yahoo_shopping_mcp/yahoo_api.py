@@ -16,8 +16,8 @@ from yahoo_shopping_mcp.constants import (
     YAHOO_ITEM_SEARCH_URL,
     YAHOO_PRODUCT_HOSTS,
 )
-from yahoo_shopping_mcp.models import SearchProductsInput, UsageState
-from yahoo_shopping_mcp.storage import CacheStore, SQLiteStateStore
+from yahoo_shopping_mcp.models import SearchProductsInput
+from yahoo_shopping_mcp.storage import CacheStore
 
 
 @dataclass(slots=True)
@@ -55,26 +55,34 @@ def _contains_restricted_product_term(value: Any) -> bool:
     return False
 
 
+class YahooRateLimiter:
+    def __init__(self, min_interval_seconds: float) -> None:
+        self._min_interval_seconds = min_interval_seconds
+        self._lock = asyncio.Lock()
+        self._last_started_at = 0.0
+
+    async def wait_for_slot(self) -> None:
+        async with self._lock:
+            now = asyncio.get_running_loop().time()
+            elapsed = now - self._last_started_at
+            if self._last_started_at and elapsed < self._min_interval_seconds:
+                await asyncio.sleep(self._min_interval_seconds - elapsed)
+            self._last_started_at = asyncio.get_running_loop().time()
+
+
 class YahooShoppingClient:
     def __init__(
         self,
         app_id: str,
         http_client: httpx.AsyncClient,
         min_interval_seconds: float,
-        state_store: SQLiteStateStore,
         cache_store: CacheStore,
-        warning_threshold: int,
-        hard_limit: int,
+        rate_limiter: YahooRateLimiter | None = None,
     ) -> None:
         self._app_id = app_id
         self._http_client = http_client
-        self._min_interval_seconds = min_interval_seconds
-        self._rate_lock = asyncio.Lock()
-        self._last_started_at = 0.0
-        self._state_store = state_store
         self._cache_store = cache_store
-        self._warning_threshold = warning_threshold
-        self._hard_limit = hard_limit
+        self._rate_limiter = rate_limiter or YahooRateLimiter(min_interval_seconds)
 
     async def search(self, request: SearchProductsInput) -> dict[str, Any]:
         if is_restricted_query(request.query):
@@ -89,35 +97,13 @@ class YahooShoppingClient:
             return self._format_response(
                 request,
                 self._filter_response(cached_response, request),
-                self._state_store.load_usage(),
-                from_cache=True,
             )
 
-        async with self._rate_lock:
-            now = asyncio.get_running_loop().time()
-            elapsed = now - self._last_started_at
-            if self._last_started_at and elapsed < self._min_interval_seconds:
-                await asyncio.sleep(self._min_interval_seconds - elapsed)
-            self._last_started_at = asyncio.get_running_loop().time()
-            response_json, usage_state = await self._fetch_with_usage_accounting(request)
+        await self._rate_limiter.wait_for_slot()
+        response_json = await self._fetch_with_retry(request)
         response_json = self._filter_response(response_json, request)
         self._cache_store.set(cache_key_payload, response_json)
-        return self._format_response(request, response_json, usage_state, from_cache=False)
-
-    async def _fetch_with_usage_accounting(
-        self,
-        request: SearchProductsInput,
-    ) -> tuple[dict[str, Any], UsageState]:
-        usage_state = self._state_store.load_usage()
-        if usage_state.count >= self._hard_limit:
-            raise YahooShoppingError(
-                kind="daily_limit_exceeded",
-                message="Daily request limit reached. Requests are blocked until the next JST day.",
-                retryable=False,
-            )
-        response_json = await self._fetch_with_retry(request)
-        usage_state = self._state_store.increment_usage()
-        return response_json, usage_state
+        return self._format_response(request, response_json)
 
     async def _fetch_with_retry(self, request: SearchProductsInput) -> dict[str, Any]:
         params = self._build_request_params(request)
@@ -188,9 +174,6 @@ class YahooShoppingClient:
         self,
         request: SearchProductsInput,
         response_json: dict[str, Any],
-        usage_state: UsageState,
-        *,
-        from_cache: bool,
     ) -> dict[str, Any]:
         hits = response_json.get("hits", [])
         if not isinstance(hits, list):
@@ -206,15 +189,6 @@ class YahooShoppingClient:
             if response_json.get("_policy_filtered") and not items
             else self._build_no_items_reason(hits, items)
         )
-        warnings: list[dict[str, Any]] = []
-        if usage_state.count >= self._warning_threshold:
-            warnings.append(
-                {
-                    "kind": "daily_limit_warning",
-                    "message": f"Daily request count is {usage_state.count} and approaching the 50000 request cap.",
-                }
-            )
-
         return {
             "results": results,
             "products": products,
@@ -233,8 +207,6 @@ class YahooShoppingClient:
                 "total_results_returned": response_json.get("totalResultsReturned", len(hits)),
             },
             "applied_filters": request.model_dump(exclude_none=True),
-            "usage": self._build_usage_payload(usage_state, from_cache=from_cache),
-            "warnings": warnings,
             "attribution": {
                 "text": YAHOO_ATTRIBUTION_TEXT,
                 "url": YAHOO_ATTRIBUTION_URL,
@@ -482,11 +454,3 @@ class YahooShoppingClient:
             http_status=response.status_code,
             provider_code=provider_code or None,
         )
-
-    @staticmethod
-    def _build_usage_payload(state: UsageState, *, from_cache: bool) -> dict[str, Any]:
-        return {
-            "date": state.date,
-            "count": state.count,
-            "from_cache": from_cache,
-        }

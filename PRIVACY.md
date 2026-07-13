@@ -11,7 +11,7 @@ from installations that users run themselves.
 - The server uses those fields to validate the request, apply the safety policy,
   query Yahoo! Shopping, and return relevant product information.
 - The server stores safety-filtered Yahoo response data in a short-lived local
-  cache and stores daily usage and rate-limit counters in a local SQLite file.
+  cache and stores global rate-limit counters in a local SQLite file.
 - The server does not request chat history, precise location, payment data,
   government identifiers, passwords, or authentication codes.
 
@@ -25,8 +25,8 @@ the data to an additional analytics or advertising service.
 ## Retention
 
 The default cache lifetime is 300 seconds and can be changed with
-`YAHOO_SHOPPING_MCP_CACHE_TTL_SECONDS`. Local usage counters and cache files
-remain until their configured lifecycle or until the operator deletes the data
+`YAHOO_SHOPPING_MCP_CACHE_TTL_SECONDS`. Cache files and rate-limit state remain
+until their configured lifecycle or until the operator deletes the data
 directory. Reverse-proxy, container, and platform logs are controlled by the
 operator and may have separate retention rules.
 

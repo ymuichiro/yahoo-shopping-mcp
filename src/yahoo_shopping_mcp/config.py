@@ -10,10 +10,8 @@ from yahoo_shopping_mcp.constants import (
     DEFAULT_CACHE_TTL_SECONDS,
     DEFAULT_GLOBAL_RATE_LIMIT,
     DEFAULT_GLOBAL_WINDOW_SECONDS,
-    DEFAULT_HARD_LIMIT,
     DEFAULT_HOST,
     DEFAULT_PORT,
-    DEFAULT_WARNING_THRESHOLD,
     STATE_DIRNAME,
 )
 
@@ -25,8 +23,6 @@ class Settings:
     port: int = DEFAULT_PORT
     cache_ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS
     base_rate_seconds: float = DEFAULT_BASE_RATE_SECONDS
-    warning_threshold: int = DEFAULT_WARNING_THRESHOLD
-    hard_limit: int = DEFAULT_HARD_LIMIT
     global_rate_limit: int = DEFAULT_GLOBAL_RATE_LIMIT
     global_window_seconds: int = DEFAULT_GLOBAL_WINDOW_SECONDS
     allowed_hosts: list[str] | None = None
@@ -48,10 +44,6 @@ def load_settings() -> Settings:
     cache_ttl_seconds = DEFAULT_CACHE_TTL_SECONDS if not cache_ttl_raw else int(cache_ttl_raw)
     base_rate_raw = (os.getenv("YAHOO_SHOPPING_MCP_BASE_RATE_SECONDS") or "").strip()
     base_rate_seconds = DEFAULT_BASE_RATE_SECONDS if not base_rate_raw else float(base_rate_raw)
-    warning_raw = (os.getenv("YAHOO_SHOPPING_MCP_WARNING_THRESHOLD") or "").strip()
-    warning_threshold = DEFAULT_WARNING_THRESHOLD if not warning_raw else int(warning_raw)
-    hard_limit_raw = (os.getenv("YAHOO_SHOPPING_MCP_HARD_LIMIT") or "").strip()
-    hard_limit = DEFAULT_HARD_LIMIT if not hard_limit_raw else int(hard_limit_raw)
     global_rate_raw = (os.getenv("YAHOO_SHOPPING_MCP_GLOBAL_RATE_LIMIT") or "").strip()
     global_rate_limit = DEFAULT_GLOBAL_RATE_LIMIT if not global_rate_raw else int(global_rate_raw)
     global_window_raw = (os.getenv("YAHOO_SHOPPING_MCP_GLOBAL_WINDOW_SECONDS") or "").strip()
@@ -66,8 +58,6 @@ def load_settings() -> Settings:
         port=port,
         cache_ttl_seconds=cache_ttl_seconds,
         base_rate_seconds=base_rate_seconds,
-        warning_threshold=warning_threshold,
-        hard_limit=hard_limit,
         global_rate_limit=global_rate_limit,
         global_window_seconds=global_window_seconds,
         allowed_hosts=allowed_hosts,

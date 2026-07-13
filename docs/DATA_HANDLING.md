@@ -16,7 +16,7 @@ Search terms are sent to both the MCP server and Yahoo. Do not use this server f
 
 - The cache stores only the safety-filtered Yahoo response payload.
 - Cache keys are hashes and do not contain the raw search query or JAN code.
-- SQLite stores daily usage and the global rate-limit window.
+- SQLite stores the global rate-limit window.
 - The default cache lifetime is short and configurable with `YAHOO_SHOPPING_MCP_CACHE_TTL_SECONDS`.
 - The server does not persist full chat history or client authentication data.
 

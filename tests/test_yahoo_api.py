@@ -24,8 +24,6 @@ def build_client(
     tmp_path: Path,
     handler,
     *,
-    warning_threshold: int = 45_000,
-    hard_limit: int = 50_000,
     rate_seconds: float = 1.0,
 ) -> YahooShoppingClient:
     transport = httpx.MockTransport(handler)
@@ -34,10 +32,7 @@ def build_client(
         app_id="test-appid",
         http_client=http_client,
         min_interval_seconds=rate_seconds,
-        state_store=SQLiteStateStore(tmp_path / "state"),
         cache_store=CacheStore(tmp_path / "cache", ttl_seconds=300),
-        warning_threshold=warning_threshold,
-        hard_limit=hard_limit,
     )
 
 
@@ -46,12 +41,6 @@ def _process_context():
         if method in mp.get_all_start_methods():
             return mp.get_context(method)
     pytest.skip("A multiprocessing start method is required for concurrency tests.")
-
-
-def _usage_increment_worker(state_dir: str, barrier, queue) -> None:
-    store = SQLiteStateStore(Path(state_dir))
-    barrier.wait()
-    queue.put(store.increment_usage().count)
 
 
 def _global_rate_limit_worker(state_dir: str, limit: int, window_seconds: int, barrier, queue) -> None:
@@ -63,14 +52,6 @@ def _global_rate_limit_worker(state_dir: str, limit: int, window_seconds: int, b
         queue.put(False)
     else:
         queue.put(True)
-
-
-def _seed_usage_count(state_dir: Path, count: int) -> None:
-    store = SQLiteStateStore(state_dir)
-    current_day = store.load_usage().date
-    with sqlite3.connect(state_dir / "state.sqlite3") as conn:
-        conn.execute("UPDATE usage_state SET date = ?, count = ? WHERE singleton = 1", (current_day, count))
-        conn.commit()
 
 
 def _seed_global_rate_limit_count(state_dir: Path, count: int, *, window_started_at: int) -> None:
@@ -385,68 +366,7 @@ async def test_malformed_provider_error_is_sanitized(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
-async def test_daily_limit_warning(tmp_path: Path) -> None:
-    def handler(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200,
-            json={"totalResultsAvailable": 1, "totalResultsReturned": 0, "firstResultsPosition": 1, "hits": []},
-        )
-
-    state_dir = tmp_path / "state"
-    _seed_usage_count(state_dir, 44_999)
-    state_store = SQLiteStateStore(state_dir)
-    transport = httpx.MockTransport(handler)
-    http_client = httpx.AsyncClient(transport=transport)
-    client = YahooShoppingClient(
-        app_id="test-appid",
-        http_client=http_client,
-        min_interval_seconds=0.0,
-        state_store=state_store,
-        cache_store=CacheStore(tmp_path / "cache", ttl_seconds=300),
-        warning_threshold=45_000,
-        hard_limit=50_000,
-    )
-
-    try:
-        result = await client.search(SearchProductsInput(query="sony"))
-    finally:
-        await http_client.aclose()
-
-    assert result["usage"]["count"] == 45_000
-    assert result["warnings"][0]["kind"] == "daily_limit_warning"
-
-
-@pytest.mark.anyio
-async def test_daily_limit_stop(tmp_path: Path) -> None:
-    def handler(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={})
-
-    state_dir = tmp_path / "state"
-    _seed_usage_count(state_dir, 50_000)
-    state_store = SQLiteStateStore(state_dir)
-    transport = httpx.MockTransport(handler)
-    http_client = httpx.AsyncClient(transport=transport)
-    client = YahooShoppingClient(
-        app_id="test-appid",
-        http_client=http_client,
-        min_interval_seconds=0.0,
-        state_store=state_store,
-        cache_store=CacheStore(tmp_path / "cache", ttl_seconds=300),
-        warning_threshold=45_000,
-        hard_limit=50_000,
-    )
-
-    try:
-        with pytest.raises(YahooShoppingError) as exc_info:
-            await client.search(SearchProductsInput(query="sony"))
-    finally:
-        await http_client.aclose()
-
-    assert exc_info.value.kind == "daily_limit_exceeded"
-
-
-@pytest.mark.anyio
-async def test_cache_hit_skips_upstream_and_marks_usage(tmp_path: Path) -> None:
+async def test_cache_hit_skips_upstream(tmp_path: Path) -> None:
     calls = {"count": 0}
 
     def handler(_request: httpx.Request) -> httpx.Response:
@@ -471,9 +391,6 @@ async def test_cache_hit_skips_upstream_and_marks_usage(tmp_path: Path) -> None:
         await client._http_client.aclose()
 
     assert calls["count"] == 1
-    assert first["usage"]["from_cache"] is False
-    assert second["usage"]["from_cache"] is True
-    assert second["usage"]["count"] == 1
     assert len(second["items"]) == 1
     assert len(second["results"]) == 1
 
@@ -507,7 +424,6 @@ async def test_cache_persists_only_yahoo_response_payload(tmp_path: Path) -> Non
     assert result["applied_filters"]["query"] == secret_query
     assert secret_query not in cache_text
     assert "applied_filters" not in cache_text
-    assert '"usage"' not in cache_text
     assert cache_payload["totalResultsAvailable"] == 1
 
 
@@ -624,10 +540,7 @@ async def test_cache_expiry_triggers_refetch(tmp_path: Path, monkeypatch: pytest
         app_id="test-appid",
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
         min_interval_seconds=0.0,
-        state_store=SQLiteStateStore(tmp_path / "state"),
         cache_store=CacheStore(tmp_path / "cache", ttl_seconds=1),
-        warning_threshold=45_000,
-        hard_limit=50_000,
     )
     payload = SearchProductsInput(query="macbook")
 
@@ -664,69 +577,6 @@ async def test_rate_limiter_serializes_parallel_calls(tmp_path: Path) -> None:
 
     assert len(call_times) == 2
     assert call_times[1] - call_times[0] >= 0.045
-
-
-@pytest.mark.anyio
-async def test_parallel_calls_respect_daily_limit(tmp_path: Path) -> None:
-    calls = {"count": 0}
-
-    def handler(_request: httpx.Request) -> httpx.Response:
-        calls["count"] += 1
-        return httpx.Response(
-            200,
-            json={"totalResultsAvailable": 1, "totalResultsReturned": 1, "firstResultsPosition": 1, "hits": []},
-        )
-
-    state_dir = tmp_path / "state"
-    _seed_usage_count(state_dir, 49_999)
-    state_store = SQLiteStateStore(state_dir)
-    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    client = YahooShoppingClient(
-        app_id="test-appid",
-        http_client=http_client,
-        min_interval_seconds=0.0,
-        state_store=state_store,
-        cache_store=CacheStore(tmp_path / "cache", ttl_seconds=300),
-        warning_threshold=45_000,
-        hard_limit=50_000,
-    )
-
-    try:
-        first, second = await asyncio.gather(
-            client.search(SearchProductsInput(query="a")),
-            client.search(SearchProductsInput(query="b")),
-            return_exceptions=True,
-        )
-    finally:
-        await http_client.aclose()
-
-    assert calls["count"] == 1
-    assert sum(isinstance(result, YahooShoppingError) for result in (first, second)) == 1
-    assert sum(isinstance(result, dict) for result in (first, second)) == 1
-    assert SQLiteStateStore(tmp_path / "state").load_usage().count == 50_000
-
-
-def test_usage_state_preserves_parallel_increments(tmp_path: Path) -> None:
-    state_dir = tmp_path / "state"
-    _seed_usage_count(state_dir, 3)
-    assert SQLiteStateStore(state_dir).load_usage().count == 3
-    ctx = _process_context()
-    worker_count = 10
-    barrier = ctx.Barrier(worker_count)
-    queue = ctx.Queue()
-    workers = [
-        ctx.Process(target=_usage_increment_worker, args=(str(state_dir), barrier, queue))
-        for _ in range(worker_count)
-    ]
-    for worker in workers:
-        worker.start()
-    values = [queue.get(timeout=10) for _ in workers]
-    for worker in workers:
-        worker.join(timeout=10)
-        assert worker.exitcode == 0
-
-    assert sorted(values) == list(range(4, 14))
-    assert SQLiteStateStore(state_dir).load_usage().count == 13
 
 
 def test_global_rate_limit_enforces_limit_under_concurrency(tmp_path: Path) -> None:

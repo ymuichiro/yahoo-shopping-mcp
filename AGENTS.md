@@ -6,7 +6,7 @@
 主な責務は次の 3 つです。
 
 - MCP ツール `search_products` の提供
-- Yahoo API 呼び出しのレート制御、キャッシュ、日次利用量監視
+- Yahoo API 呼び出しのレート制御とキャッシュ
 - アプリケーション全体に対するグローバルレート制限
 
 サーバー本体は `FastMCP` を使っており、`Streamable HTTP` で公開します。公開 HTTP ルートは `/`, `/healthz`, `/mcp` のみです。`/` は `/healthz` と同じヘルス応答を返します。
@@ -37,8 +37,6 @@
 - `YAHOO_SHOPPING_MCP_DATA_DIR`
 - `YAHOO_SHOPPING_MCP_CACHE_TTL_SECONDS`
 - `YAHOO_SHOPPING_MCP_BASE_RATE_SECONDS`
-- `YAHOO_SHOPPING_MCP_WARNING_THRESHOLD`
-- `YAHOO_SHOPPING_MCP_HARD_LIMIT`
 - `YAHOO_SHOPPING_MCP_GLOBAL_RATE_LIMIT`
 - `YAHOO_SHOPPING_MCP_GLOBAL_WINDOW_SECONDS`
 - `YAHOO_SHOPPING_MCP_ALLOWED_HOSTS`
@@ -51,10 +49,8 @@
   MCP サーバー生成、lifespan 管理、HTTP ルート、ツール定義
 - `src/yahoo_shopping_mcp/yahoo_api.py`
   Yahoo API 呼び出し、直列レート制御、リトライ、レスポンス整形
-- `src/yahoo_shopping_mcp/global_rate_limiter.py`
-  アプリケーション全体のグローバルレート制限
 - `src/yahoo_shopping_mcp/storage.py`
-  JSON 永続化、原子的書き込み、日次利用量、キャッシュ
+  JSON 永続化、原子的書き込み、グローバルレート制限、キャッシュ
 - `src/yahoo_shopping_mcp/models.py`
   入出力モデル、永続化モデル
 - `tests/test_http_routes.py`
@@ -81,7 +77,7 @@
 - UI Resource の HTML/JS/CSS を変更したら URI のバージョンも上げ、ChatGPT のキャッシュを確実に更新する。
 - MCP Apps の bridge や `structuredContent` を触ったら、MCP Inspector で `ui/initialize`、カルーセル、商品画像、console error がないことを確認してから完了にする。
 - 診断情報や上流レスポンスは MCP tool result に返さないこと。LLM/host が検索結果として読む主データは `results` とし、詳細な診断はサーバー側だけで扱う。
-- 日次利用量、Yahoo 向け直列レート制御、アプリ全体のグローバルレート制限は別物として扱う。目的を混同しない。
+- Yahoo 向け直列レート制御とアプリ全体のグローバルレート制限は別物として扱う。目的を混同しない。
 - このプロジェクトは認証を使わない。認証やユーザー単位制御、UI 画面を再導入しないこと。
 - 過剰なフォールバックや用途不明の抽象化を追加しないこと。公開面は `MCP + healthz` に限定する。
 
@@ -94,7 +90,6 @@
   - Yahoo API エラー処理
   - 429 / 5xx リトライ
   - キャッシュ
-  - 日次利用量監視
   - グローバルレート制限
   - `GET /` と `GET /healthz`
   - 削除済みルートの `404`

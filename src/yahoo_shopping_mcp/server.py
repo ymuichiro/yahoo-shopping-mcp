@@ -11,7 +11,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
-from pydantic import Field, ValidationError
+from pydantic import Field, PositiveInt, ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -19,7 +19,7 @@ from yahoo_shopping_mcp.config import Settings, load_settings
 from yahoo_shopping_mcp.models import ProductCarouselResponse, SearchProductsInput, SearchProductsResponse
 from yahoo_shopping_mcp.product_carousel import PRODUCT_CAROUSEL_HTML, PRODUCT_UI_META, PRODUCT_UI_URI
 from yahoo_shopping_mcp.storage import CacheStore, SQLiteStateStore, StoredRateLimitExceededError
-from yahoo_shopping_mcp.yahoo_api import YahooShoppingClient, YahooShoppingError, is_restricted_query
+from yahoo_shopping_mcp.yahoo_api import YahooRateLimiter, YahooShoppingClient, YahooShoppingError, is_restricted_query
 
 
 def _tool_error(
@@ -63,6 +63,9 @@ def create_mcp_server(
         if resolved_settings.allowed_hosts or resolved_settings.allowed_origins
         else None
     )
+    # FastMCP may create a lifespan context per Streamable HTTP session.
+    # Keep the limiter at server scope so all sessions share the same interval.
+    yahoo_rate_limiter = YahooRateLimiter(resolved_settings.base_rate_seconds)
 
     @asynccontextmanager
     async def lifespan(_: FastMCP):
@@ -71,10 +74,17 @@ def create_mcp_server(
         request_http_client = http_client or httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0))
         try:
             state_store = SQLiteStateStore(resolved_settings.state_dir)
+            cache_store = CacheStore(resolved_settings.cache_dir, resolved_settings.cache_ttl_seconds)
+            yahoo_client = YahooShoppingClient(
+                app_id=resolved_settings.app_id,
+                http_client=request_http_client,
+                min_interval_seconds=resolved_settings.base_rate_seconds,
+                cache_store=cache_store,
+                rate_limiter=yahoo_rate_limiter,
+            )
             yield {
-                "http_client": request_http_client,
                 "state_store": state_store,
-                "cache_store": CacheStore(resolved_settings.cache_dir, resolved_settings.cache_ttl_seconds),
+                "yahoo_client": yahoo_client,
             }
         finally:
             if http_client is None:
@@ -155,9 +165,9 @@ def create_mcp_server(
         sort: Annotated[Literal["-score", "+price", "-price", "-review_count"] | None, Field(description="並び順")]
         = None,
         genre_category_ids: Annotated[
-            list[int] | None, Field(min_length=1, max_length=20, description="YahooジャンルカテゴリID")
+            list[PositiveInt] | None, Field(min_length=1, max_length=20, description="YahooジャンルカテゴリID")
         ] = None,
-        brand_ids: Annotated[list[int] | None, Field(min_length=1, max_length=20, description="YahooブランドID")]
+        brand_ids: Annotated[list[PositiveInt] | None, Field(min_length=1, max_length=20, description="YahooブランドID")]
         = None,
         seller_id: Annotated[str | None, Field(min_length=1, max_length=100, description="YahooストアID")] = None,
         image_size: Annotated[Literal[76, 106, 132, 146, 300, 600] | None, Field(description="画像サイズ")]
@@ -197,23 +207,14 @@ def create_mcp_server(
                 )
             lifespan_context = mcp.get_context().request_context.lifespan_context
             state_store: SQLiteStateStore = lifespan_context["state_store"]
-            rate_limit = state_store.consume_global_rate_limit(
+            state_store.consume_global_rate_limit(
                 key="global",
                 limit=resolved_settings.global_rate_limit,
                 window_seconds=resolved_settings.global_window_seconds,
                 now=int(time.time()),
             )
-            client = YahooShoppingClient(
-                app_id=resolved_settings.app_id,
-                http_client=lifespan_context["http_client"],
-                min_interval_seconds=resolved_settings.base_rate_seconds,
-                state_store=state_store,
-                cache_store=lifespan_context["cache_store"],
-                warning_threshold=resolved_settings.warning_threshold,
-                hard_limit=resolved_settings.hard_limit,
-            )
+            client: YahooShoppingClient = lifespan_context["yahoo_client"]
             response_payload = await client.search(payload)
-            response_payload["usage"]["global_rate_limit"] = rate_limit.model_dump()
             validated = SearchProductsResponse.model_validate(response_payload)
             content_payload = validated.model_dump(mode="json")
             return CallToolResult(

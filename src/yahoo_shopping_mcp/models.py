@@ -40,11 +40,6 @@ class SearchProductsInput(BaseModel):
         return self
 
 
-class UsageState(BaseModel):
-    date: str
-    count: int = 0
-
-
 class CachedResponse(BaseModel):
     expires_at: float
     payload: dict
@@ -109,18 +104,6 @@ class PaginationPayload(BaseModel):
     total_results_returned: int
 
 
-class UsagePayload(BaseModel):
-    date: str
-    count: int
-    from_cache: bool
-    global_rate_limit: "GlobalRateLimitPayload | None" = None
-
-
-class WarningPayload(BaseModel):
-    kind: str
-    message: str
-
-
 class AttributionPayload(BaseModel):
     text: str
     url: str
@@ -143,6 +126,4 @@ class SearchProductsResponse(BaseModel):
     items: list[ItemPayload]
     pagination: PaginationPayload
     applied_filters: dict[str, object]
-    usage: UsagePayload
-    warnings: list[WarningPayload]
     attribution: AttributionPayload

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 
 import httpx
 import pytest
@@ -120,6 +122,8 @@ async def test_streamable_http_tool_call_is_public(tmp_path) -> None:
     assert schema["properties"]["condition"]["anyOf"][0]["enum"] == ["new", "used"]
     assert schema["properties"]["results"]["maximum"] == 50
     assert schema["properties"]["genre_category_ids"]["anyOf"][0]["maxItems"] == 20
+    assert schema["properties"]["genre_category_ids"]["anyOf"][0]["items"]["exclusiveMinimum"] == 0
+    assert schema["properties"]["brand_ids"]["anyOf"][0]["items"]["exclusiveMinimum"] == 0
     assert "queryまたはjan_code" in tools.tools[0].description
     assert tools.tools[0].annotations.readOnlyHint is True
     assert tools.tools[0].annotations.openWorldHint is True
@@ -198,6 +202,51 @@ async def test_streamable_http_returns_text_and_carousel_data(tmp_path) -> None:
     assert content_payload["results"][0]["title"] == "Desk Lamp"
     assert content_payload["display_summary"] == "lamp: 1 item returned"
     assert content_payload["summary"]["total_results_available"] == 1
+
+
+@pytest.mark.anyio
+async def test_streamable_http_shares_yahoo_rate_limiter_across_requests(tmp_path) -> None:
+    call_times: list[float] = []
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        call_times.append(time.monotonic())
+        return httpx.Response(
+            200,
+            json={"totalResultsAvailable": 1, "totalResultsReturned": 0, "firstResultsPosition": 1, "hits": []},
+        )
+
+    settings = Settings(
+        app_id="test-appid",
+        host="127.0.0.1",
+        port=8000,
+        base_rate_seconds=0.05,
+        state_dir=tmp_path / "state",
+        cache_dir=tmp_path / "cache",
+    )
+    app = create_mcp_server(
+        settings,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    ).streamable_http_app()
+
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:8000") as client:
+            async def invoke(query: str):
+                async with streamable_http_client("http://127.0.0.1:8000/mcp", http_client=client) as (
+                    read_stream,
+                    write_stream,
+                    _,
+                ):
+                    async with ClientSession(read_stream, write_stream) as session:
+                        await session.initialize()
+                        return await session.call_tool("search_products", {"query": query})
+
+            first, second = await asyncio.gather(invoke("lamp"), invoke("chair"))
+
+    assert first.isError is False
+    assert second.isError is False
+    assert len(call_times) == 2
+    assert call_times[1] - call_times[0] >= 0.045
 
 
 @pytest.mark.anyio

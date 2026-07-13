@@ -4,17 +4,13 @@ import hashlib
 import json
 import sqlite3
 import time
-from datetime import datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
-from zoneinfo import ZoneInfo
 
-from yahoo_shopping_mcp.models import CachedResponse, GlobalRateLimitPayload, UsageState
+from yahoo_shopping_mcp.models import CachedResponse, GlobalRateLimitPayload
 
 STATE_DB_FILENAME = "state.sqlite3"
-
-JST = ZoneInfo("Asia/Tokyo")
 
 
 def atomic_write_json(path: Path, payload: Any) -> None:
@@ -36,32 +32,6 @@ class SQLiteStateStore:
         self._path = state_dir / STATE_DB_FILENAME
         state_dir.mkdir(parents=True, exist_ok=True)
         self._initialize()
-
-    def load_usage(self, today: str | None = None) -> UsageState:
-        current_day = today or datetime.now(JST).strftime("%Y-%m-%d")
-        with self._connect() as conn:
-            conn.execute("BEGIN IMMEDIATE")
-            try:
-                state = self._load_usage_locked(conn, current_day)
-            except Exception:
-                conn.rollback()
-                raise
-            conn.commit()
-            return state
-
-    def increment_usage(self, today: str | None = None) -> UsageState:
-        current_day = today or datetime.now(JST).strftime("%Y-%m-%d")
-        with self._connect() as conn:
-            conn.execute("BEGIN IMMEDIATE")
-            try:
-                state = self._load_usage_locked(conn, current_day)
-                state = state.model_copy(update={"count": state.count + 1})
-                conn.execute("UPDATE usage_state SET date = ?, count = ? WHERE singleton = 1", (state.date, state.count))
-            except Exception:
-                conn.rollback()
-                raise
-            conn.commit()
-            return state
 
     def consume_global_rate_limit(
         self,
@@ -122,15 +92,6 @@ class SQLiteStateStore:
             conn.execute("PRAGMA journal_mode = WAL")
             conn.execute(
                 """
-                CREATE TABLE IF NOT EXISTS usage_state (
-                    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-                    date TEXT NOT NULL,
-                    count INTEGER NOT NULL
-                )
-                """
-            )
-            conn.execute(
-                """
                 CREATE TABLE IF NOT EXISTS global_rate_limit_windows (
                     key TEXT PRIMARY KEY,
                     window_started_at INTEGER NOT NULL,
@@ -138,20 +99,6 @@ class SQLiteStateStore:
                 )
                 """
             )
-
-    def _load_usage_locked(self, conn: sqlite3.Connection, current_day: str) -> UsageState:
-        row = conn.execute("SELECT date, count FROM usage_state WHERE singleton = 1").fetchone()
-        if row is None:
-            state = UsageState(date=current_day, count=0)
-            conn.execute("INSERT INTO usage_state (singleton, date, count) VALUES (1, ?, ?)", (state.date, state.count))
-            return state
-
-        state = UsageState(date=str(row["date"]), count=int(row["count"]))
-        if state.date != current_day:
-            state = UsageState(date=current_day, count=0)
-            conn.execute("UPDATE usage_state SET date = ?, count = ? WHERE singleton = 1", (state.date, state.count))
-        return state
-
 
 class CacheStore:
     def __init__(self, cache_dir: Path, ttl_seconds: int) -> None:
