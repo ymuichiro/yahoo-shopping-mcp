@@ -1,83 +1,154 @@
 # Yahoo! Shopping MCP
 
-Yahoo!ショッピング 商品検索 API v3 を MCP サーバーとして公開・自前運用できるプロジェクトです。`search_products` を公開で提供しつつ、Yahoo 側保護のための直列化、429 リトライ、短期キャッシュ、アプリケーション全体のグローバルレートリミットを実装しています。
+An open-source, community-maintained MCP server for the Yahoo! Shopping Item
+Search API v3. It provides read-only product search through Streamable HTTP and
+can be run locally or self-hosted with Docker.
 
-このリポジトリ自体はオープンソースで、ローカル実行と Docker / Cloudflare Tunnel の両方に対応しています。
+This is not an official Yahoo! Shopping, LINE Yahoo, or OpenAI service. The
+maintainers do not represent, endorse, operate, or guarantee Yahoo! Shopping,
+the Yahoo! Developer Network, or OpenAI.
 
-## 公開方針
+## Project status and hosted endpoints
 
-このリポジトリは、Yahoo!ショッピングの公式サービスではなく、Yahoo!デベロッパーネットワークのAPIを利用するオープンソースのMCPサーバーです。LINEヤフー株式会社、Yahoo!ショッピング、OpenAIとの提携・承認・保証を示すものではありません。
+This project is intended for self-hosting. It does not provide a guaranteed
+shared or production-hosted endpoint.
 
-共有ホストの継続提供はこのプロジェクトの保証範囲外です。利用者は自分のYahoo! Developer Client IDを設定し、必要な規約・クレジット表示・利用制限を確認したうえで、自分の環境にホストしてください。
+If a Cloudflare Tunnel URL is shared separately by a maintainer for testing,
+that URL is a temporary verification endpoint. It may be stopped, restarted,
+changed, or unavailable at any time; it has no uptime, SLA, support, privacy,
+or data-retention guarantee. Do not use it for production or confidential
+workloads. Run this server on infrastructure you control instead.
 
-ローカル利用が既定です。インターネットへ公開する場合は、認証なしのMCPエンドポイントになるため、レート制限、Host/Origin制限、ログとデータ保持を確認してください。
+This is a community implementation. Before using it, independently review the
+current Yahoo! Developer Network and Yahoo! Shopping API terms, quotas,
+attribution requirements, content restrictions, and any rules applicable to
+your jurisdiction and deployment. The maintainers do not guarantee that the
+implementation or its usage complies with a third-party policy.
 
-## 機能
+## Features
 
-- `search_products` による Yahoo!ショッピング商品検索
-- キーワード、JAN、価格帯、在庫、商品状態、送料条件、ソート、ページング
-- Yahoo 向けの 1 req/sec ベース直列化
-- 429 の指数バックオフ再試行
-- 同一クエリの短期キャッシュ
-- SQLite ベースのアプリケーション全体のグローバルレートリミット
-- `GET /`, `GET /healthz`, `POST/GET/DELETE /mcp` だけを公開
-- OpenAIの安全ガイドラインに合わせ、危険な商品検索や不正な外部URLは返しません
+- Read-only `search_products` tool for Yahoo! Shopping product search
+- Keyword, JAN code, price, stock, condition, shipping, sorting, category,
+  brand, seller, image-size, and pagination filters
+- A same-process interval between Yahoo request starts (1 second by default)
+- Exponential backoff for Yahoo HTTP 429 responses and a bounded 5xx retry
+- Short-lived cache of safety-filtered Yahoo response data
+- SQLite-backed application-wide rate limiting
+- MCP Apps product carousel with Yahoo attribution
+- Conservative filtering of restricted product terms and non-Yahoo URLs
+- `GET /`, `GET /healthz`, and Streamable HTTP MCP at `/mcp`
 
-## ローカル Plugin パッケージ
+The rate limiter is an application safeguard, not a Yahoo quota guarantee or an
+SLA. It applies within one process; separate replicas need their own controls.
 
-リポジトリ直下に、ローカル利用向けの Plugin メタデータを含めています。
+## Protocol and endpoints
 
-- `.codex-plugin/plugin.json`: Plugin名、説明、starter prompts、ロゴ、参照文書
-- `.mcp.json`: `http://127.0.0.1:8000/mcp` を参照するMCP設定
-- `assets/logo.svg`: 商品検索を表すロゴ
+The server uses the MCP Streamable HTTP transport:
 
-このパッケージはStore公開や共有ホストを前提にしていません。利用前に利用者自身がMCPサーバーを起動し、Yahoo Client IDを設定してください。ChatGPTアプリIDに依存する`.app.json`は意図的に含めていません。
+- MCP endpoint: `/mcp`
+- Health endpoint: `GET /healthz`
+- Root health endpoint: `GET /`
+- MCP authentication: none
 
-## 認証
+The server is bound to loopback by default. An unauthenticated endpoint is not
+automatically an internet-public endpoint; if you expose it, add network,
+reverse-proxy, rate-limit, logging, and data-retention controls appropriate to
+your deployment.
 
-このサーバーは認証を実装していません。API キー、OAuth、JWT、セッションログインは使いません。MCP エンドポイントは公開で、その代わりに全体レートリミットだけを適用します。
+## Local plugin package
 
-## 使い方
+The repository includes metadata for local use:
 
-### ChatGPT Developer Mode や他の MCP クライアントから使う
+- `.codex-plugin/plugin.json`: local plugin metadata, prompts, and logo
+- `.mcp.json`: local MCP client configuration
+- `assets/logo.svg`: product-search icon
 
-自分で起動したMCPサーバーのURLを指定します。ローカル実行時は次のいずれかです。
+These files do not provide a store listing or a shared hosted service. Start
+your own server and configure your own Yahoo Client ID before using them.
 
-```text
-http://127.0.0.1:18000/mcp
+## Quick start
+
+Requirements: Python 3.12+, [`uv`](https://docs.astral.sh/uv/), and a Yahoo!
+Shopping API `appid` obtained by the operator.
+
+```bash
+make sync-dev
+YAHOO_SHOPPING_APP_ID="your-app-id" make run
 ```
 
-ローカルで直接 `make run` した場合はこちらです。
+The local MCP endpoint is `http://127.0.0.1:8000/mcp` and the health check is
+`http://127.0.0.1:8000/healthz`.
 
-```text
-http://127.0.0.1:8000/mcp
+To bind a different interface or port for a controlled deployment:
+
+```bash
+YAHOO_SHOPPING_APP_ID="your-app-id" make run HOST=0.0.0.0 PORT=8080
 ```
 
-認証ヘッダは不要です。これは自分で管理する環境での利用を前提にした設計です。公開ホストへ配置する場合は、インフラ側のアクセス制御とレート制限を別途設定してください。
+Keep the Yahoo Client ID in an environment variable. Never commit it or place
+it in a search query.
 
-### `search_products` の主な入力
+## Docker and self-hosting
 
-- `query`
-- `jan_code`
-- `price_from`
-- `price_to`
-- `in_stock`
-- `condition`
-- `shipping`
-- `sort`
-- `genre_category_ids`（カテゴリ ID の OR 指定）
-- `brand_ids`（ブランド ID の OR 指定）
-- `seller_id`
-- `image_size`（`76`, `106`, `132`, `146`, `300`, `600`）
-- `is_discounted`
-- `results`
-- `start`
+Create the local environment template and start the container:
 
-`query` または `jan_code` のどちらかは必須です。
+```bash
+make init-env
+make up
+```
 
-`genre_category_ids` と `brand_ids` は配列で指定し、Yahoo API にはカンマ区切りの OR 条件として送信します。`preorder`、`payment`、配送日指定などの追加フィルタは公開しません。
+The default local Compose endpoint is
+`http://127.0.0.1:18000/mcp`. See [Deployment](docs/DEPLOYMENT.md) for a
+production-oriented container and reverse-proxy checklist.
 
-### 呼び出し例
+For direct application startup, use the `YAHOO_SHOPPING_MCP_*` environment
+variables. Compose maps its convenience variables `ALLOWED_HOSTS` and
+`ALLOWED_ORIGINS` to the application settings.
+
+## Optional Cloudflare Tunnel
+
+Cloudflare Tunnel is an optional developer deployment path, not a requirement.
+It is only enabled by:
+
+```bash
+make up-tunnel
+```
+
+Set `CLOUDFLARE_TUNNEL_TOKEN` only when using that Compose profile. The tunnel
+hostname and published application are configured in Cloudflare, outside this
+repository. Replace the local values in `.env` with the exact external
+hostname and origin used by your deployment:
+
+```env
+YAHOO_SHOPPING_APP_ID=replace-with-your-yahoo-app-id
+CLOUDFLARE_TUNNEL_TOKEN=replace-with-your-cloudflare-tunnel-token
+ALLOWED_HOSTS=mcp.example.com
+ALLOWED_ORIGINS=https://mcp.example.com
+```
+
+The tunnel does not add MCP authentication. Do not treat a tunnel URL shared
+by the maintainer as a supported hosted service; use a hostname and
+infrastructure that you control.
+
+## Using the tool
+
+Use the endpoint you started from ChatGPT Developer Mode or another MCP
+client. No MCP authentication header is expected.
+
+`search_products` requires at least one of `query` and `jan_code`. Important
+constraints include:
+
+- `query`: 1–200 characters
+- `jan_code`: an 8–13 digit string
+- `genre_category_ids` and `brand_ids`: arrays of 1–20 positive integers
+- `results`: 1–50
+- `start`: 1 or greater
+- `start + results <= 1000`
+- `price_from <= price_to` when both are supplied
+
+See the complete contract in [docs/API.md](docs/API.md).
+
+Example:
 
 ```json
 {
@@ -89,170 +160,51 @@ http://127.0.0.1:8000/mcp
 }
 ```
 
-主な出力:
+The tool returns model-readable JSON in `content[0].text`, with product data
+under `results`. Carousel data is returned in `structuredContent.products`.
+The UI Resource is versioned as
+`ui://yahoo-shopping/product-carousel-v4.html` and displays Yahoo attribution.
 
-ChatGPT が読む商品データは MCP tool result の `content[0].text` に JSON として返し、先頭キーを `results` にします。
-カルーセル用データは `structuredContent.products` に返し、tool の `outputSchema` も同じ `{ products: [...] }` に限定します。
+The server does not place orders, process payments, modify accounts, or
+guarantee product availability, prices, sellers, shipping, or legal compliance.
 
-### 商品カルーセル（MCP Apps）
+## Privacy and safety
 
-`search_products` は MCP Apps UI Resource `ui://yahoo-shopping/product-carousel-v4.html` に紐付いています。ChatGPT では、検索結果を横スクロールの商品カードとして表示します。画像は Yahoo API の `exImage` を優先し、なければ `image.medium` / `image.small` を使います。
+Search fields are sent to the operator's MCP server and to Yahoo! Shopping.
+The server stores only safety-filtered Yahoo response data in a short-lived
+cache and global rate-limit state in local storage. It does not provide user
+accounts or persist full chat history.
 
-- `content[0].text`: ChatGPT が本文として読む `results` JSON
-- `structuredContent.products`: カルーセルが描画する商品データ
-- `resources/read`: カルーセル HTML を `text/html;profile=mcp-app` として返す
-- CSP: Yahoo 画像 CDN `https://item-shopping.c.yimg.jp` だけを許可する
-- Yahoo!デベロッパーネットワークのクレジットをカルーセル下部に表示する
+Do not send secrets, payment data, passwords, government identifiers, or
+sensitive personal data as search terms. Public operators must publish privacy,
+support, and retention details that match their actual infrastructure.
 
-カルーセルは MCP Apps の `ui/*` bridge で ChatGPT と通信します。`search_products` 実行後にカードの「Yahoo!ショッピングで見る」から商品ページを開けます。
+The safety filter is conservative and does not guarantee complete product
+classification. It is not a substitute for Yahoo's policies, legal advice, or
+operator review.
 
-- `results`: `id`, `title`, `url`, `text`, `metadata` を含む商品検索結果リスト
-- `display_summary`: MCP クライアントや LLM が読み取りやすい検索結果サマリー
-- `no_items_reason`: 商品がない場合の理由。例: `upstream_hits_empty`
+See [PRIVACY.md](PRIVACY.md), [TERMS.md](TERMS.md),
+[SECURITY.md](SECURITY.md), and [docs/DATA_HANDLING.md](docs/DATA_HANDLING.md).
 
-`results[*].metadata` には `price`, `price_text`, `seller_name`, `image_url`, `badges` が入ります。
-詳細なYahoo APIの内部フィールドや診断情報は、公開MCPの本文には返しません。
-
-## キャッシュとプライバシー
-
-このサーバーは同一検索条件に対して短期キャッシュを共有します。ただし、キャッシュファイルには **安全フィルタ後のYahoo APIレスポンス由来データだけ** を保存し、`query` や `jan_code` などの入力文字列はディスクへ保存しません。
-
-検索語はリクエストとしてMCPサーバーとYahoo APIへ送信されます。会話履歴、認証情報、決済情報、政府識別子、検索語を含むアプリケーションログは保存しません。厳密なプライバシー要件がある場合は、必ず自分でホストし、データディレクトリとプロキシのログを管理してください。
-
-詳細は [プライバシー通知](PRIVACY.md)、[データ取り扱い](docs/DATA_HANDLING.md)、[利用上の注意](TERMS.md)、[セキュリティ方針](SECURITY.md)、[サポート](SUPPORT.md) を参照してください。
-
-## 安全ポリシー
-
-成人向け商品、武器、薬物、タバコ、ギャンブル、マルウェア・監視用品、偽造品などに該当する検索語や商品は返却しません。これはキーワードとYahoo APIレスポンスの保守的な判定であり、Yahoo!ショッピングの商品分類を完全に保証するものではありません。
-
-検索結果はYahoo!ショッピングの商品ページへのリンクとして扱い、購入・注文・アカウント変更は実行しません。
-
-## 必要なもの
-
-- Python 3.12 以上
-- `uv`
-- Yahoo!ショッピング API の `appid`
-
-## ローカルセットアップ
-
-依存同期:
-
-```bash
-make sync-dev
-```
-
-起動:
-
-```bash
-YAHOO_SHOPPING_APP_ID="your-app-id" make run
-```
-
-ホストやポートを変える場合:
-
-```bash
-YAHOO_SHOPPING_APP_ID="your-app-id" make run HOST=0.0.0.0 PORT=8080
-```
-
-デフォルト URL:
-
-- MCP endpoint: `http://127.0.0.1:8000/mcp`
-- Health check: `http://127.0.0.1:8000/healthz`
-
-## Docker / Cloudflare セットアップ
-
-`.env` 作成:
-
-```bash
-make init-env
-```
-
-最低限の設定:
-
-- `YAHOO_SHOPPING_APP_ID`
-- `ALLOWED_HOSTS`
-- `ALLOWED_ORIGINS`
-
-`CLOUDFLARE_TUNNEL_TOKEN`は`make up-tunnel`を使う場合だけ必要です。
-
-任意の主な設定:
-
-- `YAHOO_SHOPPING_MCP_GLOBAL_RATE_LIMIT`
-- `YAHOO_SHOPPING_MCP_GLOBAL_WINDOW_SECONDS`
-- `YAHOO_SHOPPING_MCP_CACHE_TTL_SECONDS`
-- `YAHOO_SHOPPING_MCP_BASE_RATE_SECONDS`
-
-ローカル compose 起動:
-
-```bash
-make up
-```
-
-Named Tunnel 付き起動:
-
-```bash
-make up-tunnel
-```
-
-停止:
-
-```bash
-make down
-```
-
-ローカル compose の公開 URL:
-
-- MCP endpoint: `http://127.0.0.1:18000/mcp`
-- Health check: `http://127.0.0.1:18000/healthz`
-- Root health check: `http://127.0.0.1:18000/`
-
-## 任意のCloudflare Tunnel設定
-
-Cloudflare Tunnelは開発者が任意で使える公開手段です。ローカル実行や他のクラウド/リバースプロキシは必須ではありません。
-
-`make up-tunnel`を使う場合だけ、CloudflareのTunnel Tokenを設定してください。
-
-`.env.example`:
-
-```env
-YAHOO_SHOPPING_APP_ID=replace-with-your-yahoo-app-id
-CLOUDFLARE_TUNNEL_TOKEN=replace-with-your-cloudflare-tunnel-token
-ALLOWED_HOSTS=localhost:18000,127.0.0.1:18000
-ALLOWED_ORIGINS=http://localhost:18000,http://127.0.0.1:18000
-YAHOO_SHOPPING_MCP_GLOBAL_RATE_LIMIT=60
-YAHOO_SHOPPING_MCP_GLOBAL_WINDOW_SECONDS=60
-```
-
-## 開発
-
-よく使うコマンド:
-
-```bash
-make sync-dev
-make run
-make test
-make up
-make up-tunnel
-make down
-make clean
-```
-
-## 確認
-
-- `/healthz` と `/` が `200` を返す
-- `/mcp` の `initialize` と `tools/list` が成功する
-- `search_products` が商品データを `content[0].text` とUI用の構造化データに返す
-- クレジット表示、危険商品フィルタ、外部URL検証が機能する
-- 詳細な手順は [MCP検証手順](docs/VERIFICATION.md) を参照する
-- 審査用の再現ケースは [レビュー用テストケース](docs/SUBMISSION_TEST_CASES.md) を参照する
-
-## テスト
+## Development and verification
 
 ```bash
 make test
 ```
 
-テストでは Yahoo! への実通信を行いません。`httpx.MockTransport` でダミーレスポンスを返します。
+Tests use `httpx.MockTransport` and do not call Yahoo! from CI. For MCP
+Inspector and UI checks, see [docs/VERIFICATION.md](docs/VERIFICATION.md).
+Reviewable positive and negative cases are in
+[docs/SUBMISSION_TEST_CASES.md](docs/SUBMISSION_TEST_CASES.md).
 
-## ライセンス
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before
+opening a change. For support, use [SUPPORT.md](SUPPORT.md); report security
+issues using the private process in [SECURITY.md](SECURITY.md).
+
+## Japanese documentation
+
+日本語の概要・導入手順は [docs/README.ja.md](docs/README.ja.md) を参照してください。
+
+## License
 
 [MIT](LICENSE)

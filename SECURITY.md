@@ -17,4 +17,11 @@ Cloudflare Tunnel is an optional developer deployment path. Other tunnels, rever
 
 ## Reporting
 
-Please report suspected vulnerabilities privately through the repository's security contact or the repository hosting provider. Include a minimal reproduction and avoid posting credentials or personal data in a public issue.
+Please report suspected vulnerabilities privately through GitHub's private
+vulnerability reporting page:
+
+<https://github.com/ymuichiro/yahoo-shopping-mcp/security/advisories/new>
+
+If private reporting is unavailable, contact the repository maintainer through
+the repository hosting provider before opening a public issue. Include a
+minimal reproduction and avoid posting credentials or personal data.

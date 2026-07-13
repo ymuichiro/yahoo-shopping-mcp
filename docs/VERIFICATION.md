@@ -2,6 +2,8 @@
 
 These checks are environment-independent. They do not require a particular cloud platform or tunnel provider.
 
+For deployment and reverse-proxy requirements, see [DEPLOYMENT.md](DEPLOYMENT.md).
+
 ## Local smoke test
 
 ```bash

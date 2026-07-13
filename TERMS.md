@@ -4,6 +4,12 @@ This project is distributed under the [MIT License](LICENSE) and is provided
 without a warranty. It is an independent open-source project and is not an
 official Yahoo! Shopping, LINE Yahoo, or OpenAI service.
 
+It is a community implementation, not an official Yahoo! Shopping API client.
+The maintainers do not guarantee that its behavior, documentation, or usage
+complies with current third-party terms. Operators must independently verify
+the latest applicable terms, quotas, attribution rules, content restrictions,
+and legal requirements before use.
+
 Operators are responsible for:
 
 - providing and protecting their own Yahoo! Developer Client ID;
