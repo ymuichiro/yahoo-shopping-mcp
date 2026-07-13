@@ -25,6 +25,16 @@ Yahoo!ショッピング 商品検索 API v3 を MCP サーバーとして公開
 - `GET /`, `GET /healthz`, `POST/GET/DELETE /mcp` だけを公開
 - OpenAIの安全ガイドラインに合わせ、危険な商品検索や不正な外部URLは返しません
 
+## ローカル Plugin パッケージ
+
+リポジトリ直下に、ローカル利用向けの Plugin メタデータを含めています。
+
+- `.codex-plugin/plugin.json`: Plugin名、説明、starter prompts、ロゴ、参照文書
+- `.mcp.json`: `http://127.0.0.1:8000/mcp` を参照するMCP設定
+- `assets/logo.svg`: 商品検索を表すロゴ
+
+このパッケージはStore公開や共有ホストを前提にしていません。利用前に利用者自身がMCPサーバーを起動し、Yahoo Client IDを設定してください。ChatGPTアプリIDに依存する`.app.json`は意図的に含めていません。
+
 ## 認証
 
 このサーバーは認証を実装していません。API キー、OAuth、JWT、セッションログインは使いません。MCP エンドポイントは公開で、その代わりに全体レートリミットだけを適用します。

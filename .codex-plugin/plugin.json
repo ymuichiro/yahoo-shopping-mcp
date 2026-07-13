@@ -1,0 +1,33 @@
+{
+  "name": "yahoo-shopping-mcp",
+  "version": "0.1.0",
+  "description": "Read-only Yahoo! Shopping product search through an MCP server.",
+  "author": {
+    "name": "Yahoo Shopping MCP contributors",
+    "url": "https://github.com/ymuichiro/yahoo-shopping-mcp"
+  },
+  "homepage": "https://github.com/ymuichiro/yahoo-shopping-mcp",
+  "repository": "https://github.com/ymuichiro/yahoo-shopping-mcp",
+  "license": "MIT",
+  "keywords": ["shopping", "yahoo", "mcp", "product-search"],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Yahoo! Shopping MCP",
+    "shortDescription": "Search Yahoo! Shopping products with a read-only MCP tool.",
+    "longDescription": "Search Yahoo! Shopping products by keyword or JAN code. The server validates bounded inputs, filters unsafe product categories and external URLs, and returns model-readable results plus an optional product carousel.",
+    "developerName": "Yahoo Shopping MCP contributors",
+    "category": "Shopping",
+    "capabilities": ["Read"],
+    "websiteURL": "https://github.com/ymuichiro/yahoo-shopping-mcp",
+    "privacyPolicyURL": "https://github.com/ymuichiro/yahoo-shopping-mcp/blob/main/PRIVACY.md",
+    "termsOfServiceURL": "https://github.com/ymuichiro/yahoo-shopping-mcp/blob/main/TERMS.md",
+    "defaultPrompt": [
+      "Search Yahoo! Shopping for desk lamps under 5000 yen and summarize price, seller, and availability.",
+      "Find a Yahoo! Shopping product by JAN code and show the matching result.",
+      "Compare Yahoo! Shopping products by price, seller, and stock status."
+    ],
+    "brandColor": "#2563EB",
+    "composerIcon": "./assets/logo.svg",
+    "logo": "./assets/logo.svg"
+  }
+}

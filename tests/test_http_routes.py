@@ -110,6 +110,12 @@ async def test_streamable_http_tool_call_is_public(tmp_path) -> None:
     content_payload = json.loads(result.content[0].text)
     assert tools.tools[0].outputSchema is not None
     schema = tools.tools[0].inputSchema
+    assert schema["allOf"][0]["anyOf"] == [
+        {"required": ["query"], "properties": {"query": {"type": "string"}}},
+        {"required": ["jan_code"], "properties": {"jan_code": {"type": "string"}}},
+    ]
+    assert "price_from <= price_to" in schema["description"]
+    assert "start + results <= 1000" in schema["description"]
     assert schema["properties"]["query"]["anyOf"][0]["maxLength"] == 200
     assert schema["properties"]["condition"]["anyOf"][0]["enum"] == ["new", "used"]
     assert schema["properties"]["results"]["maximum"] == 50

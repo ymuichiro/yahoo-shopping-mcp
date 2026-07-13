@@ -267,6 +267,22 @@ def create_mcp_server(
                 details=exc.details or {},
             ) from exc
 
+    registered_search_tool = mcp._tool_manager.get_tool("search_products")
+    if registered_search_tool is not None:
+        registered_search_tool.parameters["allOf"] = [
+            {
+                "anyOf": [
+                    {"required": ["query"], "properties": {"query": {"type": "string"}}},
+                    {"required": ["jan_code"], "properties": {"jan_code": {"type": "string"}}},
+                ]
+            }
+        ]
+        registered_search_tool.parameters["description"] = (
+            "queryまたはjan_codeの少なくとも一方が必要です。"
+            "price_fromとprice_toを両方指定する場合はprice_from <= price_to、"
+            "start + results <= 1000である必要があります。"
+        )
+
     return mcp
 
 

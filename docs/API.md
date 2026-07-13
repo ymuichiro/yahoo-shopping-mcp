@@ -6,7 +6,12 @@ The server exposes Streamable HTTP at `/mcp` and read-only health routes at `/` 
 
 ## `search_products`
 
-`query` or `jan_code` is required.
+`query` or `jan_code` is required. When both `price_from` and `price_to` are
+provided, `price_from <= price_to` is required. The result window must satisfy
+`start + results <= 1000`. The first condition is represented in the public
+JSON Schema with `allOf`/`anyOf`; the numeric comparisons are enforced during
+runtime validation and documented in the schema description because standard
+JSON Schema cannot compare or add two instance values.
 
 | Field | Type | Constraint |
 |---|---|---|
