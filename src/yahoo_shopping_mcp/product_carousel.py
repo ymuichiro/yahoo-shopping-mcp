@@ -1,4 +1,4 @@
-PRODUCT_UI_URI = "ui://yahoo-shopping/product-carousel-v3.html"
+PRODUCT_UI_URI = "ui://yahoo-shopping/product-carousel-v4.html"
 PRODUCT_UI_META = {
     "ui": {
         "prefersBorder": False,
@@ -27,12 +27,13 @@ PRODUCT_CAROUSEL_HTML = """<!doctype html>
     .image img { width: 100%; height: 100%; object-fit: contain; }
     .body { display: grid; gap: 8px; padding: 12px; }
     h3 { margin: 0; font-size: 14px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-    .price { font-size: 16px; } .seller, .stock { color: #5f6368; } button { justify-self: start; border: 0; border-radius: 8px; padding: 8px 10px; background: #0b57d0; color: #fff; cursor: pointer; }
+    .price { font-size: 16px; } .seller, .stock { color: #5f6368; } button { justify-self: start; border: 0; border-radius: 8px; padding: 8px 10px; background: #0b57d0; color: #fff; cursor: pointer; } #attribution { margin: 8px 4px 0; font-size: 11px; color: #5f6368; }
   </style>
 </head>
 <body>
   <div id="status" aria-live="polite">商品を読み込んでいます…</div>
   <div id="products"></div>
+  <div id="attribution"><span style="margin:15px 15px 15px 15px"><a href="https://developer.yahoo.co.jp/sitemap/">Web Services by Yahoo! JAPAN</a></span></div>
   <script>
     const status = document.getElementById("status");
     const container = document.getElementById("products");
@@ -46,7 +47,15 @@ PRODUCT_CAROUSEL_HTML = """<!doctype html>
     });
     const showError = (message) => { status.textContent = message; container.replaceChildren(); };
     const productUrl = (value) => {
-      try { const url = new URL(value); return url.protocol === "https:" && url.hostname === "store.shopping.yahoo.co.jp" ? url.href : null; }
+      try {
+        const url = new URL(value);
+        const hosts = new Set(["shopping.yahoo.co.jp", "store.shopping.yahoo.co.jp", "paypaymall.yahoo.co.jp"]);
+        return url.protocol === "https:" && hosts.has(url.hostname) ? url.href : null;
+      }
+      catch { return null; }
+    };
+    const imageUrl = (value) => {
+      try { const url = new URL(value); return url.protocol === "https:" && url.hostname === "item-shopping.c.yimg.jp" ? url.href : null; }
       catch { return null; }
     };
     const showProducts = (products = []) => {
@@ -55,7 +64,8 @@ PRODUCT_CAROUSEL_HTML = """<!doctype html>
       container.replaceChildren(...products.map((product) => {
         const card = document.createElement("article"); card.className = "card";
         const image = document.createElement("div"); image.className = "image";
-        if (product.imageUrl) { const img = document.createElement("img"); img.src = product.imageUrl; img.alt = product.title || "商品画像"; img.onerror = () => { img.remove(); image.textContent = "画像なし"; }; image.append(img); }
+        const safeImageUrl = imageUrl(product.imageUrl);
+        if (safeImageUrl) { const img = document.createElement("img"); img.src = safeImageUrl; img.alt = product.title || "商品画像"; img.onerror = () => { img.remove(); image.textContent = "画像なし"; }; image.append(img); }
         else image.textContent = "画像なし";
         const body = document.createElement("div"); body.className = "body";
         const title = document.createElement("h3"); title.textContent = product.title;
@@ -78,7 +88,7 @@ PRODUCT_CAROUSEL_HTML = """<!doctype html>
     request("ui/initialize", {
       protocolVersion: "2026-01-26",
       appCapabilities: {},
-      appInfo: { name: "yahoo-product-carousel", version: "3.0.0" }
+      appInfo: { name: "yahoo-product-carousel", version: "4.0.0" }
     }).then(() => {
       notify("ui/notifications/initialized");
       const resize = () => notify("ui/notifications/size-changed", { height: document.documentElement.scrollHeight });

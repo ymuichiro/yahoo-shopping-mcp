@@ -99,7 +99,7 @@ def _yahoo_item_search_response() -> dict:
                 "code": "store_desk-lamp",
                 "name": "Desk Lamp",
                 "headLine": "Bright compact lamp",
-                "url": "https://example.com/desk-lamp",
+                "url": "https://store.shopping.yahoo.co.jp/example/desk-lamp.html",
                 "price": 3200,
                 "priceLabel": {
                     "defaultPrice": 3980,
@@ -110,24 +110,24 @@ def _yahoo_item_search_response() -> dict:
                 },
                 "inStock": True,
                 "condition": "new",
-                "image": {"small": "https://example.com/s.jpg", "medium": "https://example.com/m.jpg"},
-                "exImage": {"url": "https://example.com/ex.jpg", "width": 600, "height": 600},
+                "image": {"small": "https://item-shopping.c.yimg.jp/i/g/example_s", "medium": "https://item-shopping.c.yimg.jp/i/g/example_m"},
+                "exImage": {"url": "https://item-shopping.c.yimg.jp/i/g/example_ex", "width": 600, "height": 600},
                 "genreCategory": {"id": 2506, "name": "Furniture", "depth": 2},
                 "parentGenreCategories": [{"id": 1, "name": "Shopping", "depth": 0}],
                 "brand": {"id": 123, "name": "Lamp Brand"},
                 "parentBrands": [{"id": 100, "name": "Lighting"}],
                 "janCode": "4900000000000",
                 "delivery": {"area": "13", "deadline": 13, "day": 1},
-                "review": {"rate": 4.5, "count": 12, "url": "https://example.com/review"},
-                "seller": {"name": "Store", "url": "https://example.com/store", "isBestSeller": True},
+                "review": {"rate": 4.5, "count": 12, "url": "https://store.shopping.yahoo.co.jp/example/review"},
+                "seller": {"name": "Store", "url": "https://store.shopping.yahoo.co.jp/example/", "isBestSeller": True},
                 "description": "compact lamp",
             },
             {
                 "name": "Floor Lamp",
-                "url": "https://example.com/floor-lamp",
+                "url": "https://store.shopping.yahoo.co.jp/example/floor-lamp.html",
                 "price": 4980,
                 "inStock": False,
-                "image": {"small": "https://example.com/floor-s.jpg"},
+                "image": {"small": "https://item-shopping.c.yimg.jp/i/g/example_floor"},
                 "seller": {"name": "Interior Store"},
             },
         ],
@@ -142,7 +142,7 @@ REQUEST_CASES = [
     ),
     (
         "jan_code_only",
-        {"jan_code": 4900000000000},
+        {"jan_code": "4900000000000"},
         {"appid": "test-appid", "jan_code": "4900000000000", "results": "20", "start": "1"},
     ),
     (
@@ -341,6 +341,50 @@ async def test_retries_429_then_succeeds(tmp_path: Path, monkeypatch: pytest.Mon
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(200, content=b"not-json"),
+        httpx.Response(200, json=["not", "an", "object"]),
+    ],
+    ids=["invalid-json", "invalid-shape"],
+)
+async def test_invalid_success_response_is_sanitized(tmp_path: Path, response: httpx.Response) -> None:
+    client = build_client(tmp_path, lambda _request: response, rate_seconds=0.0)
+    try:
+        with pytest.raises(YahooShoppingError) as exc_info:
+            await client.search(SearchProductsInput(query="lamp"))
+    finally:
+        await client._http_client.aclose()
+
+    assert exc_info.value.kind == "provider_invalid_response"
+    assert exc_info.value.message == "Yahoo Shopping API returned an invalid response."
+    assert exc_info.value.details is None
+
+
+@pytest.mark.anyio
+async def test_malformed_provider_error_is_sanitized(tmp_path: Path) -> None:
+    client = build_client(
+        tmp_path,
+        lambda _request: httpx.Response(
+            400,
+            json={"Error": "not-an-object", "message": "secret-provider-message"},
+        ),
+        rate_seconds=0.0,
+    )
+    try:
+        with pytest.raises(YahooShoppingError) as exc_info:
+            await client.search(SearchProductsInput(query="lamp"))
+    finally:
+        await client._http_client.aclose()
+
+    assert exc_info.value.kind == "provider_error"
+    assert exc_info.value.provider_code is None
+    assert exc_info.value.message == "Yahoo Shopping API request failed."
+    assert "secret-provider-message" not in str(exc_info.value)
+
+
+@pytest.mark.anyio
 async def test_daily_limit_warning(tmp_path: Path) -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -413,7 +457,7 @@ async def test_cache_hit_skips_upstream_and_marks_usage(tmp_path: Path) -> None:
                 "totalResultsAvailable": 1,
                 "totalResultsReturned": 1,
                 "firstResultsPosition": 1,
-                "hits": [{"name": "A", "url": "https://example.com", "price": 100}],
+                "hits": [{"name": "A", "url": "https://store.shopping.yahoo.co.jp/example/a.html", "price": 100}],
             },
         )
 
@@ -432,9 +476,6 @@ async def test_cache_hit_skips_upstream_and_marks_usage(tmp_path: Path) -> None:
     assert second["usage"]["count"] == 1
     assert len(second["items"]) == 1
     assert len(second["results"]) == 1
-    assert second["debug"]["cache_hit"] is True
-    assert second["debug"]["upstream_hits_count"] == 1
-    assert second["debug"]["formatted_items_count"] == 1
 
 
 @pytest.mark.anyio
@@ -448,7 +489,7 @@ async def test_cache_persists_only_yahoo_response_payload(tmp_path: Path) -> Non
                 "totalResultsAvailable": 1,
                 "totalResultsReturned": 1,
                 "firstResultsPosition": 1,
-                "hits": [{"name": "A", "url": "https://example.com", "price": 100}],
+                "hits": [{"name": "A", "url": "https://store.shopping.yahoo.co.jp/example/a.html", "price": 100}],
             },
         )
 
@@ -471,7 +512,7 @@ async def test_cache_persists_only_yahoo_response_payload(tmp_path: Path) -> Non
 
 
 @pytest.mark.anyio
-async def test_formats_results_and_debug_metadata(tmp_path: Path) -> None:
+async def test_formats_results_and_public_metadata(tmp_path: Path) -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=_yahoo_item_search_response())
 
@@ -486,9 +527,9 @@ async def test_formats_results_and_debug_metadata(tmp_path: Path) -> None:
     assert result["results"][0]["metadata"]["price"] == 3200
     assert result["results"][0]["metadata"]["price_text"] == "JPY 3,200"
     assert result["results"][0]["metadata"]["seller_name"] == "Store"
-    assert result["results"][0]["metadata"]["image_url"] == "https://example.com/ex.jpg"
+    assert result["results"][0]["metadata"]["image_url"] == "https://item-shopping.c.yimg.jp/i/g/example_ex"
     assert result["results"][0]["metadata"]["badges"] == ["In stock", "Free shipping"]
-    assert result["products"][0]["imageUrl"] == "https://example.com/ex.jpg"
+    assert result["products"][0]["imageUrl"] == "https://item-shopping.c.yimg.jp/i/g/example_ex"
     assert result["products"][0]["sellerName"] == "Store"
     assert result["products"][0]["inStock"] is True
     assert result["items"][0]["code"] == "store_desk-lamp"
@@ -498,7 +539,7 @@ async def test_formats_results_and_debug_metadata(tmp_path: Path) -> None:
     assert result["items"][0]["price_label"]["fixed_price"] is None
     assert result["items"][0]["price_label"]["period_start"] == 1783090800
     assert result["items"][0]["price_label"]["period_end"] == 1783270800
-    assert result["items"][0]["ex_image"] == {"url": "https://example.com/ex.jpg", "width": 600, "height": 600}
+    assert result["items"][0]["ex_image"] == {"url": "https://item-shopping.c.yimg.jp/i/g/example_ex", "width": 600, "height": 600}
     assert result["items"][0]["genre_category"] == {"id": 2506, "name": "Furniture", "depth": 2}
     assert result["items"][0]["parent_genre_categories"] == [{"id": 1, "name": "Shopping", "depth": 0}]
     assert result["items"][0]["brand"] == {"id": 123, "name": "Lamp Brand"}
@@ -507,12 +548,6 @@ async def test_formats_results_and_debug_metadata(tmp_path: Path) -> None:
     assert result["items"][0]["delivery"] == {"area": "13", "deadline": 13, "day": 1}
     assert result["items"][1]["price_label"] is None
     assert result["items"][1]["parent_genre_categories"] == []
-    assert result["debug"]["upstream_url"] == YAHOO_ITEM_SEARCH_URL
-    assert result["debug"]["upstream_status"] == 200
-    assert "hits" in result["debug"]["upstream_keys"]
-    assert result["debug"]["upstream_hits_count"] == 2
-    assert result["debug"]["formatted_items_count"] == 2
-    assert result["debug"]["cache_hit"] is False
     assert result["no_items_reason"] is None
 
 
@@ -534,8 +569,44 @@ async def test_empty_hits_explain_no_items_reason(tmp_path: Path) -> None:
     assert result["items"] == []
     assert result["display_summary"] == "missing: no items returned"
     assert result["no_items_reason"] == "upstream_hits_empty"
-    assert result["debug"]["upstream_hits_count"] == 0
-    assert result["debug"]["formatted_items_count"] == 0
+
+
+@pytest.mark.anyio
+async def test_filters_restricted_products_and_external_urls(tmp_path: Path) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "totalResultsAvailable": 2,
+                "totalResultsReturned": 2,
+                "firstResultsPosition": 1,
+                "hits": [
+                    {
+                        "name": "Allowed lamp",
+                        "url": "https://store.shopping.yahoo.co.jp/example/lamp.html",
+                        "image": {"medium": "https://evil.example/image.jpg"},
+                        "seller": {"name": "Store", "url": "https://evil.example/store"},
+                    },
+                    {
+                        "name": "adult product",
+                        "url": "https://store.shopping.yahoo.co.jp/example/adult.html",
+                    },
+                ],
+            },
+        )
+
+    client = build_client(tmp_path, handler, rate_seconds=0.0)
+    try:
+        result = await client.search(SearchProductsInput(query="lamp"))
+    finally:
+        await client._http_client.aclose()
+
+    assert len(result["items"]) == 1
+    assert result["items"][0]["image"]["medium"] is None
+    assert result["items"][0]["seller"]["url"] is None
+    assert result["summary"]["total_results_returned"] == 1
+    cache_text = next((tmp_path / "cache").glob("*.json")).read_text(encoding="utf-8")
+    assert "adult product" not in cache_text
 
 
 @pytest.mark.anyio
@@ -700,21 +771,21 @@ async def test_streamable_http_tool_call_returns_structured_payload(tmp_path: Pa
                         "code": "store_desk-lamp",
                         "name": "Desk Lamp",
                         "headLine": "Bright compact lamp",
-                        "url": "https://example.com/desk-lamp",
+                        "url": "https://store.shopping.yahoo.co.jp/example/desk-lamp.html",
                         "price": 3200,
                         "priceLabel": {"defaultPrice": 3980, "discountedPrice": 3200},
                         "inStock": True,
                         "condition": "new",
-                        "image": {"small": "https://example.com/s.jpg", "medium": "https://example.com/m.jpg"},
-                        "exImage": {"url": "https://example.com/ex.jpg", "width": 600, "height": 600},
+                        "image": {"small": "https://item-shopping.c.yimg.jp/i/g/example_s", "medium": "https://item-shopping.c.yimg.jp/i/g/example_m"},
+                        "exImage": {"url": "https://item-shopping.c.yimg.jp/i/g/example_ex", "width": 600, "height": 600},
                         "genreCategory": {"id": 2506, "name": "Furniture", "depth": 2},
                         "parentGenreCategories": [{"id": 1, "name": "Shopping", "depth": 0}],
                         "brand": {"id": 123, "name": "Lamp Brand"},
                         "parentBrands": [{"id": 100, "name": "Lighting"}],
                         "janCode": "4900000000000",
                         "delivery": {"area": "13", "deadline": 13, "day": 1},
-                        "review": {"rate": 4.5, "count": 12, "url": "https://example.com/review"},
-                        "seller": {"name": "Store", "url": "https://example.com/store", "isBestSeller": True},
+                        "review": {"rate": 4.5, "count": 12, "url": "https://store.shopping.yahoo.co.jp/example/review"},
+                        "seller": {"name": "Store", "url": "https://store.shopping.yahoo.co.jp/example/", "isBestSeller": True},
                         "description": "compact lamp",
                     }
                 ],
@@ -750,25 +821,13 @@ async def test_streamable_http_tool_call_returns_structured_payload(tmp_path: Pa
     assert tools.tools[0].outputSchema is not None
     assert list(tools.tools[0].outputSchema["properties"]) == ["products"]
     assert result.structuredContent is not None
-    assert result.structuredContent["products"][0]["imageUrl"] == "https://example.com/ex.jpg"
+    assert result.structuredContent["products"][0]["imageUrl"] == "https://item-shopping.c.yimg.jp/i/g/example_ex"
     assert content_text.lstrip().startswith('{\n  "results"')
     assert content_payload["summary"]["total_results_available"] == 1
     assert content_payload["results"][0]["title"] == "Desk Lamp"
     assert content_payload["results"][0]["metadata"]["price"] == 3200
     assert content_payload["results"][0]["metadata"]["seller_name"] == "Store"
-    assert content_payload["results"][0]["url"] == "https://example.com/desk-lamp"
-    assert content_payload["items"][0]["code"] == "store_desk-lamp"
-    assert content_payload["items"][0]["headline"] == "Bright compact lamp"
-    assert content_payload["items"][0]["price_label"]["discounted_price"] == 3200
-    assert content_payload["items"][0]["ex_image"]["url"] == "https://example.com/ex.jpg"
-    assert content_payload["items"][0]["genre_category"]["id"] == 2506
-    assert content_payload["items"][0]["parent_genre_categories"][0]["name"] == "Shopping"
-    assert content_payload["items"][0]["brand"]["name"] == "Lamp Brand"
-    assert content_payload["items"][0]["parent_brands"][0]["id"] == 100
-    assert content_payload["items"][0]["jan_code"] == "4900000000000"
-    assert content_payload["items"][0]["delivery"]["deadline"] == 13
-    assert content_payload["debug"]["upstream_url"] == YAHOO_ITEM_SEARCH_URL
-    assert content_payload["debug"]["upstream_hits_count"] == 1
-    assert content_payload["debug"]["formatted_items_count"] == 1
-    assert content_payload["debug"]["cache_hit"] is False
+    assert content_payload["results"][0]["url"] == "https://store.shopping.yahoo.co.jp/example/desk-lamp.html"
+    assert "items" not in content_payload
+    assert "debug" not in content_payload
     assert content_payload["attribution"]["required_display"] is True

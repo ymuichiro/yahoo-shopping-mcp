@@ -75,12 +75,12 @@
 - `search_products` の入力契約を変える場合は、`models.py`、README、テストを同時に更新する。
 - `search_products` の返却では、商品データを MCP tool result の `content[0].text` に JSON として含めること。ChatGPT では `structuredContent` / `outputSchema` だけに置いた商品データが会話本文として認識されず、metadata だけが露出することがある。
 - `content[0].text` の JSON は、先頭キー `results` に `id`, `title`, `url`, `text`, `metadata` を持つ商品リストを置く。`metadata` には少なくとも `price`, `price_text`, `seller_name`, `image_url`, `badges` を含める。
-- 商品カード UI は `ui://yahoo-shopping/product-carousel-v3.html` の MCP Apps Resource で提供する。tool metadata は標準の `_meta.ui.resourceUri`、Resource は `text/html;profile=mcp-app` と Yahoo 画像 CDN の最小 CSP を返す。
+- 商品カード UI は `ui://yahoo-shopping/product-carousel-v4.html` の MCP Apps Resource で提供する。tool metadata は標準の `_meta.ui.resourceUri`、Resource は `text/html;profile=mcp-app` と Yahoo 画像 CDN の最小 CSP を返す。
 - `content[0].text` の商品本文と、カルーセル用の `structuredContent.products` を併記する。tool の `outputSchema` は後者と同じ `{ products: [...] }` に限定する。
 - UI は ChatGPT が推奨する MCP Apps `ui/*` bridge を使う。旧 `window.openai` や legacy metadata の互換経路を追加しない。
 - UI Resource の HTML/JS/CSS を変更したら URI のバージョンも上げ、ChatGPT のキャッシュを確実に更新する。
 - MCP Apps の bridge や `structuredContent` を触ったら、MCP Inspector で `ui/initialize`、カルーセル、商品画像、console error がないことを確認してから完了にする。
-- `debug` は返してよいが、商品情報の代替にしないこと。LLM/host が検索結果として読む主データは `results` とする。
+- 診断情報や上流レスポンスは MCP tool result に返さないこと。LLM/host が検索結果として読む主データは `results` とし、詳細な診断はサーバー側だけで扱う。
 - 日次利用量、Yahoo 向け直列レート制御、アプリ全体のグローバルレート制限は別物として扱う。目的を混同しない。
 - このプロジェクトは認証を使わない。認証やユーザー単位制御、UI 画面を再導入しないこと。
 - 過剰なフォールバックや用途不明の抽象化を追加しないこと。公開面は `MCP + healthz` に限定する。

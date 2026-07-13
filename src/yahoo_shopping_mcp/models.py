@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, PositiveInt, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt, model_validator
 
 
 Condition = Literal["new", "used"]
@@ -11,17 +11,19 @@ Sort = Literal["-score", "+price", "-price", "-review_count"]
 
 
 class SearchProductsInput(BaseModel):
-    query: str | None = Field(default=None, min_length=1)
-    jan_code: str | int | None = Field(default=None, min_length=1)
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    query: str | None = Field(default=None, min_length=1, max_length=200)
+    jan_code: str | None = Field(default=None, min_length=8, max_length=13, pattern=r"^\d+$")
     price_from: int | None = Field(default=None, ge=0)
     price_to: int | None = Field(default=None, ge=0)
     in_stock: bool | None = None
     condition: Condition | None = None
     shipping: Shipping | None = None
     sort: Sort | None = None
-    genre_category_ids: list[PositiveInt] | None = Field(default=None, min_length=1)
-    brand_ids: list[PositiveInt] | None = Field(default=None, min_length=1)
-    seller_id: str | None = Field(default=None, min_length=1)
+    genre_category_ids: list[PositiveInt] | None = Field(default=None, min_length=1, max_length=20)
+    brand_ids: list[PositiveInt] | None = Field(default=None, min_length=1, max_length=20)
+    seller_id: str | None = Field(default=None, min_length=1, max_length=100)
     image_size: Literal[76, 106, 132, 146, 300, 600] | None = None
     is_discounted: bool | None = None
     results: int = Field(default=20, ge=1, le=50)
@@ -36,15 +38,6 @@ class SearchProductsInput(BaseModel):
         if self.start + self.results > 1000:
             raise ValueError("start + results must be less than or equal to 1000.")
         return self
-
-    @field_validator("jan_code", mode="before")
-    @classmethod
-    def normalize_jan_code(cls, value: object) -> object:
-        if value is None:
-            return None
-        if isinstance(value, int):
-            return str(value)
-        return value
 
 
 class UsageState(BaseModel):
@@ -141,21 +134,11 @@ class GlobalRateLimitPayload(BaseModel):
     reset_at: int
 
 
-class DebugPayload(BaseModel):
-    upstream_url: str
-    upstream_status: int | None = None
-    upstream_keys: list[str]
-    upstream_hits_count: int
-    formatted_items_count: int
-    cache_hit: bool
-
-
 class SearchProductsResponse(BaseModel):
     results: list[SearchResultPayload]
     products: list[ProductCardPayload]
     display_summary: str
     no_items_reason: str | None = None
-    debug: DebugPayload
     summary: SummaryPayload
     items: list[ItemPayload]
     pagination: PaginationPayload

@@ -4,14 +4,14 @@ from contextlib import asynccontextmanager
 import json
 import logging
 import time
-from typing import Annotated
+from typing import Annotated, Literal
 
 import httpx
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -19,7 +19,7 @@ from yahoo_shopping_mcp.config import Settings, load_settings
 from yahoo_shopping_mcp.models import ProductCarouselResponse, SearchProductsInput, SearchProductsResponse
 from yahoo_shopping_mcp.product_carousel import PRODUCT_CAROUSEL_HTML, PRODUCT_UI_META, PRODUCT_UI_URI
 from yahoo_shopping_mcp.storage import CacheStore, SQLiteStateStore, StoredRateLimitExceededError
-from yahoo_shopping_mcp.yahoo_api import YahooShoppingClient, YahooShoppingError
+from yahoo_shopping_mcp.yahoo_api import YahooShoppingClient, YahooShoppingError, is_restricted_query
 
 
 def _tool_error(
@@ -128,6 +128,10 @@ def create_mcp_server(
 
     @mcp.tool(
         title="Yahoo!ショッピング商品検索",
+        description=(
+            "読み取り専用でYahoo!ショッピングの商品を検索します。購入、注文、アカウント変更は行いません。"
+            "queryまたはjan_codeのいずれかを指定してください。"
+        ),
         annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=True),
         meta={
             "ui": {"resourceUri": PRODUCT_UI_URI, "visibility": ["model"]},
@@ -137,33 +141,34 @@ def create_mcp_server(
         structured_output=True,
     )
     async def search_products(
-        query: str | None = None,
-        jan_code: str | int | None = None,
-        price_from: int | None = None,
-        price_to: int | None = None,
-        in_stock: bool | None = None,
-        condition: str | None = None,
-        shipping: str | None = None,
-        sort: str | None = None,
-        genre_category_ids: list[int] | None = None,
-        brand_ids: list[int] | None = None,
-        seller_id: str | None = None,
-        image_size: int | None = None,
-        is_discounted: bool | None = None,
-        results: int = 20,
-        start: int = 1,
+        query: Annotated[str | None, Field(min_length=1, max_length=200, description="商品名やキーワード")] = None,
+        jan_code: Annotated[str | None, Field(min_length=8, max_length=13, pattern=r"^\d+$", description="JANコード")]
+        = None,
+        price_from: Annotated[int | None, Field(ge=0, description="価格下限（円）")] = None,
+        price_to: Annotated[int | None, Field(ge=0, description="価格上限（円）")] = None,
+        in_stock: Annotated[bool | None, Field(description="在庫ありに限定するか")] = None,
+        condition: Annotated[Literal["new", "used"] | None, Field(description="新品または中古")] = None,
+        shipping: Annotated[
+            Literal["free", "conditional_free", "free,conditional_free"] | None,
+            Field(description="送料条件"),
+        ] = None,
+        sort: Annotated[Literal["-score", "+price", "-price", "-review_count"] | None, Field(description="並び順")]
+        = None,
+        genre_category_ids: Annotated[
+            list[int] | None, Field(min_length=1, max_length=20, description="YahooジャンルカテゴリID")
+        ] = None,
+        brand_ids: Annotated[list[int] | None, Field(min_length=1, max_length=20, description="YahooブランドID")]
+        = None,
+        seller_id: Annotated[str | None, Field(min_length=1, max_length=100, description="YahooストアID")] = None,
+        image_size: Annotated[Literal[76, 106, 132, 146, 300, 600] | None, Field(description="画像サイズ")]
+        = None,
+        is_discounted: Annotated[bool | None, Field(description="セール対象に限定するか")] = None,
+        results: Annotated[int, Field(ge=1, le=50, description="返却件数")] = 20,
+        start: Annotated[int, Field(ge=1, description="取得開始位置")] = 1,
     ) -> Annotated[CallToolResult, ProductCarouselResponse]:
         """Search Yahoo! Shopping products with global rate limiting, retry, caching, and attribution metadata."""
 
         try:
-            lifespan_context = mcp.get_context().request_context.lifespan_context
-            state_store: SQLiteStateStore = lifespan_context["state_store"]
-            rate_limit = state_store.consume_global_rate_limit(
-                key="global",
-                limit=resolved_settings.global_rate_limit,
-                window_seconds=resolved_settings.global_window_seconds,
-                now=int(time.time()),
-            )
             payload = SearchProductsInput(
                 query=query,
                 jan_code=jan_code,
@@ -180,6 +185,23 @@ def create_mcp_server(
                 is_discounted=is_discounted,
                 results=results,
                 start=start,
+            )
+            if is_restricted_query(payload.query):
+                raise _tool_error(
+                    "policy_restricted",
+                    "This search request is not supported.",
+                    retryable=False,
+                    http_status=None,
+                    provider_code=None,
+                    details={},
+                )
+            lifespan_context = mcp.get_context().request_context.lifespan_context
+            state_store: SQLiteStateStore = lifespan_context["state_store"]
+            rate_limit = state_store.consume_global_rate_limit(
+                key="global",
+                limit=resolved_settings.global_rate_limit,
+                window_seconds=resolved_settings.global_window_seconds,
+                now=int(time.time()),
             )
             client = YahooShoppingClient(
                 app_id=resolved_settings.app_id,
@@ -202,10 +224,8 @@ def create_mcp_server(
                             {
                                 "results": content_payload["results"],
                                 "display_summary": content_payload["display_summary"],
-                                "items": content_payload["items"],
                                 "no_items_reason": content_payload["no_items_reason"],
                                 "summary": content_payload["summary"],
-                                "debug": content_payload["debug"],
                                 "attribution": content_payload["attribution"],
                             },
                             ensure_ascii=False,
@@ -223,7 +243,10 @@ def create_mcp_server(
                 retryable=False,
                 http_status=None,
                 provider_code=None,
-                details={"errors": exc.errors()},
+                details={
+                    "field": ".".join(str(part) for part in first_error.get("loc", ())) or None,
+                    "error_type": first_error.get("type"),
+                },
             ) from exc
         except StoredRateLimitExceededError as exc:
             raise _tool_error(

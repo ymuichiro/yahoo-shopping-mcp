@@ -38,3 +38,17 @@ def test_validates_new_filter_values() -> None:
             pass
         else:
             raise AssertionError(f"ValidationError was not raised for {kwargs}")
+
+
+def test_validates_bounded_text_and_jan_code_format() -> None:
+    for kwargs in (
+        {"query": "x" * 201},
+        {"query": "camera", "jan_code": 4900000000000},
+        {"query": "camera", "jan_code": "123"},
+    ):
+        try:
+            SearchProductsInput(**kwargs)
+        except ValidationError:
+            pass
+        else:
+            raise AssertionError(f"ValidationError was not raised for {kwargs}")

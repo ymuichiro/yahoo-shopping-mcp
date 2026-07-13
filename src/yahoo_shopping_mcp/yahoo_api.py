@@ -3,17 +3,22 @@ from __future__ import annotations
 import asyncio
 import random
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
+from urllib.parse import urlparse
 
 import httpx
 
 from yahoo_shopping_mcp.constants import (
+    RESTRICTED_SEARCH_TERMS,
     YAHOO_ATTRIBUTION_TEXT,
     YAHOO_ATTRIBUTION_URL,
+    YAHOO_IMAGE_HOSTS,
     YAHOO_ITEM_SEARCH_URL,
+    YAHOO_PRODUCT_HOSTS,
 )
 from yahoo_shopping_mcp.models import SearchProductsInput, UsageState
 from yahoo_shopping_mcp.storage import CacheStore, SQLiteStateStore
+
 
 @dataclass(slots=True)
 class YahooShoppingError(Exception):
@@ -23,6 +28,31 @@ class YahooShoppingError(Exception):
     http_status: int | None = None
     provider_code: str | None = None
     details: dict[str, Any] | None = None
+
+
+def is_restricted_query(query: str | None) -> bool:
+    normalized = (query or "").casefold()
+    return any(term in normalized for term in RESTRICTED_SEARCH_TERMS)
+
+
+def _safe_https_url(value: Any, hosts: frozenset[str]) -> str | None:
+    if not isinstance(value, str) or len(value) > 2048:
+        return None
+    parsed = urlparse(value)
+    if parsed.scheme != "https" or parsed.hostname not in hosts or parsed.username or parsed.password:
+        return None
+    return value
+
+
+def _contains_restricted_product_term(value: Any) -> bool:
+    if isinstance(value, str):
+        normalized = value.casefold()
+        return any(term in normalized for term in RESTRICTED_SEARCH_TERMS)
+    if isinstance(value, dict):
+        return any(_contains_restricted_product_term(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_restricted_product_term(item) for item in value)
+    return False
 
 
 class YahooShoppingClient:
@@ -47,10 +77,21 @@ class YahooShoppingClient:
         self._hard_limit = hard_limit
 
     async def search(self, request: SearchProductsInput) -> dict[str, Any]:
+        if is_restricted_query(request.query):
+            raise YahooShoppingError(
+                kind="policy_restricted",
+                message="This search request is not supported.",
+                retryable=False,
+            )
         cache_key_payload = request.model_dump(exclude_none=True)
         cached_response = self._cache_store.get(cache_key_payload)
         if cached_response is not None:
-            return self._format_response(request, cached_response, self._state_store.load_usage(), from_cache=True)
+            return self._format_response(
+                request,
+                self._filter_response(cached_response, request),
+                self._state_store.load_usage(),
+                from_cache=True,
+            )
 
         async with self._rate_lock:
             now = asyncio.get_running_loop().time()
@@ -59,6 +100,7 @@ class YahooShoppingClient:
                 await asyncio.sleep(self._min_interval_seconds - elapsed)
             self._last_started_at = asyncio.get_running_loop().time()
             response_json, usage_state = await self._fetch_with_usage_accounting(request)
+        response_json = self._filter_response(response_json, request)
         self._cache_store.set(cache_key_payload, response_json)
         return self._format_response(request, response_json, usage_state, from_cache=False)
 
@@ -90,7 +132,6 @@ class YahooShoppingClient:
                     kind="transport_error",
                     message="Failed to reach Yahoo Shopping API.",
                     retryable=True,
-                    details={"reason": str(exc)},
                 ) from exc
 
             if response.status_code == 429 and attempt < retries_for_rate_limit:
@@ -105,7 +146,23 @@ class YahooShoppingClient:
             if response.status_code >= 400:
                 raise self._build_http_error(response)
 
-            return response.json()
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                raise YahooShoppingError(
+                    kind="provider_invalid_response",
+                    message="Yahoo Shopping API returned an invalid response.",
+                    retryable=False,
+                    http_status=response.status_code,
+                ) from exc
+            if not isinstance(payload, dict):
+                raise YahooShoppingError(
+                    kind="provider_invalid_response",
+                    message="Yahoo Shopping API returned an invalid response.",
+                    retryable=False,
+                    http_status=response.status_code,
+                )
+            return payload
 
         raise YahooShoppingError(
             kind="rate_limited",
@@ -144,7 +201,11 @@ class YahooShoppingClient:
             for index, item in enumerate(items, start=1)
         ]
         products = [self._format_product_card(item, index) for index, item in enumerate(items, start=1)]
-        no_items_reason = self._build_no_items_reason(hits, items)
+        no_items_reason = (
+            "policy_filtered"
+            if response_json.get("_policy_filtered") and not items
+            else self._build_no_items_reason(hits, items)
+        )
         warnings: list[dict[str, Any]] = []
         if usage_state.count >= self._warning_threshold:
             warnings.append(
@@ -159,14 +220,6 @@ class YahooShoppingClient:
             "products": products,
             "display_summary": self._build_display_summary(request, items),
             "no_items_reason": no_items_reason,
-            "debug": {
-                "upstream_url": YAHOO_ITEM_SEARCH_URL,
-                "upstream_status": 200,
-                "upstream_keys": list(response_json.keys()),
-                "upstream_hits_count": len(hits),
-                "formatted_items_count": len(items),
-                "cache_hit": from_cache,
-            },
             "summary": {
                 "total_results_available": response_json.get("totalResultsAvailable", 0),
                 "total_results_returned": response_json.get("totalResultsReturned", len(hits)),
@@ -190,6 +243,27 @@ class YahooShoppingClient:
         }
 
     @staticmethod
+    def _filter_response(response_json: dict[str, Any], request: SearchProductsInput) -> dict[str, Any]:
+        raw_hits = response_json.get("hits", [])
+        if not isinstance(raw_hits, list):
+            raw_hits = []
+        safe_hits = [
+            hit
+            for hit in raw_hits
+            if isinstance(hit, dict)
+            and _safe_https_url(hit.get("url"), YAHOO_PRODUCT_HOSTS)
+            and not _contains_restricted_product_term(hit)
+        ]
+        filtered = dict(response_json)
+        filtered["hits"] = safe_hits
+        if len(safe_hits) != len(raw_hits):
+            filtered["_policy_filtered"] = True
+            filtered["totalResultsAvailable"] = len(safe_hits)
+            filtered["totalResultsReturned"] = len(safe_hits)
+            filtered["firstResultsPosition"] = request.start
+        return filtered
+
+    @staticmethod
     def _format_item(hit: dict[str, Any]) -> dict[str, Any]:
         review = YahooShoppingClient._as_dict(hit.get("review"))
         seller = YahooShoppingClient._as_dict(hit.get("seller"))
@@ -203,14 +277,14 @@ class YahooShoppingClient:
             "code": hit.get("code"),
             "name": hit.get("name"),
             "headline": hit.get("headLine"),
-            "url": hit.get("url"),
+            "url": _safe_https_url(hit.get("url"), YAHOO_PRODUCT_HOSTS),
             "price": hit.get("price"),
             "price_label": YahooShoppingClient._format_price_label(price_label),
             "in_stock": hit.get("inStock"),
             "condition": hit.get("condition"),
             "image": {
-                "small": image.get("small"),
-                "medium": image.get("medium"),
+                "small": _safe_https_url(image.get("small"), YAHOO_IMAGE_HOSTS),
+                "medium": _safe_https_url(image.get("medium"), YAHOO_IMAGE_HOSTS),
             },
             "ex_image": YahooShoppingClient._format_ex_image(ex_image),
             "genre_category": YahooShoppingClient._format_genre_category(genre_category),
@@ -225,11 +299,11 @@ class YahooShoppingClient:
             "review": {
                 "rate": review.get("rate"),
                 "count": review.get("count"),
-                "url": review.get("url"),
+                "url": _safe_https_url(review.get("url"), YAHOO_PRODUCT_HOSTS),
             },
             "seller": {
                 "name": seller.get("name"),
-                "url": seller.get("url"),
+                "url": _safe_https_url(seller.get("url"), YAHOO_PRODUCT_HOSTS),
                 "is_best_seller": seller.get("isBestSeller"),
             },
             "description": hit.get("description"),
@@ -258,7 +332,7 @@ class YahooShoppingClient:
         if not ex_image:
             return None
         return {
-            "url": ex_image.get("url"),
+            "url": _safe_https_url(ex_image.get("url"), YAHOO_IMAGE_HOSTS),
             "width": ex_image.get("width"),
             "height": ex_image.get("height"),
         }
@@ -390,16 +464,16 @@ class YahooShoppingClient:
     def _build_http_error(self, response: httpx.Response) -> YahooShoppingError:
         provider_code = None
         message = "Yahoo Shopping API request failed."
-        details: dict[str, Any] = {}
 
         try:
             payload = response.json()
             if isinstance(payload, dict):
-                details["provider_payload"] = payload
-                provider_code = str(payload.get("Error", {}).get("Code") or payload.get("code") or "")
-                message = payload.get("Error", {}).get("Message") or payload.get("message") or message
+                error_payload = payload.get("Error")
+                if isinstance(error_payload, dict):
+                    provider_code = str(error_payload.get("Code") or "")
+                provider_code = provider_code or str(payload.get("code") or "")
         except ValueError:
-            details["provider_payload"] = response.text
+            pass
 
         return YahooShoppingError(
             kind="provider_error" if response.status_code < 500 else "provider_unavailable",
@@ -407,7 +481,6 @@ class YahooShoppingClient:
             retryable=response.status_code in {429} or response.status_code >= 500,
             http_status=response.status_code,
             provider_code=provider_code or None,
-            details=details,
         )
 
     @staticmethod

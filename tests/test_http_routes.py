@@ -103,14 +103,23 @@ async def test_streamable_http_tool_call_is_public(tmp_path) -> None:
                     await session.initialize()
                     tools = await session.list_tools()
                     resources = await session.list_resources()
-                    resource = await session.read_resource("ui://yahoo-shopping/product-carousel-v3.html")
+                    resource = await session.read_resource("ui://yahoo-shopping/product-carousel-v4.html")
                     result = await session.call_tool("search_products", {"query": "lamp"})
 
     assert result.isError is False
     content_payload = json.loads(result.content[0].text)
     assert tools.tools[0].outputSchema is not None
+    schema = tools.tools[0].inputSchema
+    assert schema["properties"]["query"]["anyOf"][0]["maxLength"] == 200
+    assert schema["properties"]["condition"]["anyOf"][0]["enum"] == ["new", "used"]
+    assert schema["properties"]["results"]["maximum"] == 50
+    assert schema["properties"]["genre_category_ids"]["anyOf"][0]["maxItems"] == 20
+    assert "queryまたはjan_code" in tools.tools[0].description
+    assert tools.tools[0].annotations.readOnlyHint is True
+    assert tools.tools[0].annotations.openWorldHint is True
+    assert tools.tools[0].annotations.destructiveHint is False
     assert list(tools.tools[0].outputSchema["properties"]) == ["products"]
-    assert tools.tools[0].meta["ui"]["resourceUri"] == "ui://yahoo-shopping/product-carousel-v3.html"
+    assert tools.tools[0].meta["ui"]["resourceUri"] == "ui://yahoo-shopping/product-carousel-v4.html"
     assert "openai/outputTemplate" not in tools.tools[0].meta
     assert resources.resources[0].mimeType == "text/html;profile=mcp-app"
     assert resource.contents[0].meta["ui"]["csp"]["resourceDomains"] == ["https://item-shopping.c.yimg.jp"]
@@ -121,6 +130,9 @@ async def test_streamable_http_tool_call_is_public(tmp_path) -> None:
     assert "window.openai" not in resource.contents[0].text
     assert "overflow-y: hidden" in resource.contents[0].text
     assert "件の商品" in resource.contents[0].text
+    assert "Web Services by Yahoo! JAPAN" in resource.contents[0].text
+    assert "https://developer.yahoo.co.jp/sitemap/" in resource.contents[0].text
+    assert "const imageUrl" in resource.contents[0].text
     assert result.structuredContent is not None
     assert result.structuredContent == {"products": []}
     assert content_payload["summary"]["total_results_available"] == 1
@@ -251,7 +263,7 @@ async def test_streamable_http_tool_call_works_with_internal_http_client(
                     "totalResultsAvailable": 1,
                     "totalResultsReturned": 1,
                     "firstResultsPosition": 1,
-                    "hits": [{"name": "Desk Lamp", "url": "https://example.com/desk-lamp", "price": 3200}],
+                        "hits": [{"name": "Desk Lamp", "url": "https://store.shopping.yahoo.co.jp/example/desk-lamp.html", "price": 3200}],
                 },
             )
         return await original_get(self, url, *args, **kwargs)
@@ -287,6 +299,84 @@ async def test_streamable_http_tool_call_works_with_internal_http_client(
     assert result.structuredContent["products"][0]["title"] == "Desk Lamp"
     assert content_payload["results"][0]["title"] == "Desk Lamp"
     assert content_payload["results"][0]["metadata"]["price"] == 3200
+    assert "debug" not in content_payload
+
+
+@pytest.mark.anyio
+async def test_streamable_http_rejects_restricted_query_without_upstream_call(tmp_path) -> None:
+    calls = {"count": 0}
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        calls["count"] += 1
+        return httpx.Response(200, json={"hits": []})
+
+    settings = Settings(
+        app_id="test-appid",
+        host="127.0.0.1",
+        port=8000,
+        state_dir=tmp_path / "state",
+        cache_dir=tmp_path / "cache",
+    )
+    app = create_mcp_server(
+        settings,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    ).streamable_http_app()
+
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:8000") as client:
+            async with streamable_http_client("http://127.0.0.1:8000/mcp", http_client=client) as (
+                read_stream,
+                write_stream,
+                _,
+            ):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    result = await session.call_tool("search_products", {"query": "拳銃"})
+
+    assert result.isError is True
+    assert "policy_restricted" in result.content[0].text
+    assert calls["count"] == 0
+
+
+@pytest.mark.anyio
+async def test_streamable_http_sanitizes_provider_error_payload(tmp_path) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={"Error": {"Code": "BAD_REQUEST", "Message": "secret-user-query"}, "secret": "do-not-return"},
+        )
+
+    settings = Settings(
+        app_id="test-appid",
+        host="127.0.0.1",
+        port=8000,
+        state_dir=tmp_path / "state",
+        cache_dir=tmp_path / "cache",
+    )
+    app = create_mcp_server(
+        settings,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    ).streamable_http_app()
+
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:8000") as client:
+            async with streamable_http_client("http://127.0.0.1:8000/mcp", http_client=client) as (
+                read_stream,
+                write_stream,
+                _,
+            ):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    result = await session.call_tool("search_products", {"query": "lamp"})
+
+    assert result.isError is True
+    error_text = result.content[0].text
+    assert "provider_payload" not in error_text
+    assert "secret-user-query" not in error_text
+    assert "do-not-return" not in error_text
+    assert "BAD_REQUEST" in error_text
 
 
 @pytest.mark.anyio
