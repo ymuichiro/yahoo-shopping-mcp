@@ -63,6 +63,15 @@ hostname and service in Cloudflare, then put that exact hostname in
 by a maintainer for testing may be offline or removed and is not a production
 service or SLA.
 
+The maintainer's sample deployment, when online, is:
+
+- MCP: <https://non-official-yahoo-shopping-mcp.notelligent.app/mcp>
+- Health: <https://non-official-yahoo-shopping-mcp.notelligent.app/healthz>
+
+It is a demonstration endpoint only and may be offline, changed, or removed.
+It is not a supported production service. Use your own hostname and
+infrastructure for any real deployment.
+
 ## Operational checklist
 
 - Use your own Yahoo Client ID and verify the current Yahoo terms, quotas, and

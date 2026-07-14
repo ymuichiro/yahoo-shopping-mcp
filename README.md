@@ -19,6 +19,16 @@ changed, or unavailable at any time; it has no uptime, SLA, support, privacy,
 or data-retention guarantee. Do not use it for production or confidential
 workloads. Run this server on infrastructure you control instead.
 
+A maintainer-operated sample deployment may be available at:
+
+- MCP endpoint: <https://non-official-yahoo-shopping-mcp.notelligent.app/mcp>
+- Health check: <https://non-official-yahoo-shopping-mcp.notelligent.app/healthz>
+- Root health check: <https://non-official-yahoo-shopping-mcp.notelligent.app/>
+
+These URLs are provided for demonstration and connectivity checks only. They
+are not an official Yahoo! or OpenAI service and are not guaranteed to be
+online, stable, supported, private, or available to any particular user.
+
 This is a community implementation. Before using it, independently review the
 current Yahoo! Developer Network and Yahoo! Shopping API terms, quotas,
 attribution requirements, content restrictions, and any rules applicable to
@@ -185,6 +195,23 @@ operator review.
 
 See [PRIVACY.md](PRIVACY.md), [TERMS.md](TERMS.md),
 [SECURITY.md](SECURITY.md), and [docs/DATA_HANDLING.md](docs/DATA_HANDLING.md).
+
+## Yahoo! Developer Network references
+
+The following official pages define the external requirements that apply to the
+operator's own Yahoo! application. They are not part of this repository's
+license or a substitute for reading the current versions:
+
+- [Yahoo! Developer Network guidelines](https://developer.yahoo.co.jp/guideline/)
+- [Yahoo! Shopping API portal](https://developer.yahoo.co.jp/webapi/shopping/)
+- [Yahoo! Shopping product search v3](https://developer.yahoo.co.jp/webapi/shopping/v3/itemsearch.html)
+- [Credit and attribution rules](https://developer.yahoo.co.jp/attribution/)
+- [Usage limits](https://developer.yahoo.co.jp/appendix/rate.html)
+- [Developer guide and Client ID registration](https://developer.yahoo.co.jp/start/)
+
+Each operator must obtain and protect their own Client ID and independently
+confirm the applicable terms, usage limits, attribution, and legal requirements
+before operating this server.
 
 ## Development and verification
 
