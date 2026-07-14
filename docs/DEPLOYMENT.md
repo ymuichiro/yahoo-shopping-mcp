@@ -28,6 +28,20 @@ The default Compose mapping binds the application to loopback at
 `127.0.0.1:18000`. Put a reverse proxy or tunnel in front of that local
 endpoint if it must be reachable from another network. Do not commit `.env`.
 
+## GitHub Container Registry preview image
+
+Pushes of version tags (`v*`) publish a container image to GitHub Container
+Registry. The image tag matches the Git tag, for example:
+
+```bash
+docker pull ghcr.io/ymuichiro/yahoo-shopping-mcp:v0.9.0-preview.1
+```
+
+The workflow also supports manually rebuilding an existing tag when the
+workflow was added after that tag was created. Treat preview images as
+pre-release artifacts and verify the source tag, configuration, Yahoo
+requirements, and deployment environment before using them.
+
 ## Host and Origin policy
 
 For direct startup, configure the exact values used by the deployment:
