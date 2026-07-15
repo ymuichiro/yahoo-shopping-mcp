@@ -35,6 +35,17 @@ attribution requirements, content restrictions, and any rules applicable to
 your jurisdiction and deployment. The maintainers do not guarantee that the
 implementation or its usage complies with a third-party policy.
 
+## Demo
+
+The short demo below shows a Yahoo! Shopping search from ChatGPT and the
+resulting MCP Apps product carousel.
+
+![Yahoo! Shopping MCP demo](assets/demo.gif)
+
+The GIF is used for inline playback because GitHub does not reliably embed
+repository-local MP4 files in rendered Markdown. The higher-quality MP4 is
+available at [assets/demo.mp4](assets/demo.mp4).
+
 ## Features
 
 - Read-only `search_products` tool for Yahoo! Shopping product search
