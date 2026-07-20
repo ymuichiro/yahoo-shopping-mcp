@@ -78,6 +78,20 @@ ALLOWED_ORIGINS=https://mcp.example.com
 
 開発者が使う検証用TunnelのURLを、利用者向けの常時稼働サービスや公式サービスとみなさないでください。継続利用には自分のサーバー、ドメイン、Tunnelまたはリバースプロキシを用意してください。
 
+## Claude Desktopでの設定
+
+このサーバーが提供する通信方式はStreamable HTTPのみです。Claude Desktopの`claude_desktop_config.json`はローカルのstdioサーバーを起動するための設定なので、このリポジトリを`command`として登録しても動作しません。このリポジトリにはstdioブリッジを含めていません。
+
+自分で運用する認証済みのリモート環境へ接続する場合は、Claude Desktopの**Settings → Connectors → Add custom connector**を開き、`/mcp`まで含むHTTPSのMCP URLを入力してください。
+
+```text
+https://mcp.example.com/mcp
+```
+
+接続先が提供する認証フローを完了してください。開発者が共有する検証用エンドポイントは、認証のない一時的なURLであり、本番用のClaudeコネクタとして使用しないでください。`YAHOO_SHOPPING_APP_ID`はMCPサーバー側にだけ設定し、Claude Desktopの設定へ入力しないでください。
+
+ローカル開発では`YAHOO_SHOPPING_APP_ID=... make run`でサーバーを起動し、`http://127.0.0.1:8000/mcp`を[MCP Inspector](VERIFICATION.md#mcp-inspector)で確認できます。Claude Desktopからローカル接続するには別途stdioアダプターが必要で、このプロジェクトには含まれていません。詳細はMCP公式ドキュメントの[ローカルサーバー接続](https://modelcontextprotocol.io/docs/develop/connect-local-servers)と[リモートサーバー接続](https://modelcontextprotocol.io/docs/develop/connect-remote-servers)を参照してください。
+
 ## MCPプロトコルと利用方法
 
 MCPのStreamable HTTPを`/mcp`で提供します。`GET /`と`GET /healthz`はヘルスチェックです。`search_products`は`query`または`jan_code`の少なくとも一方を必要とします。

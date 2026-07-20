@@ -154,6 +154,39 @@ The tunnel does not add MCP authentication. Do not treat a tunnel URL shared
 by the maintainer as a supported hosted service; use a hostname and
 infrastructure that you control.
 
+## Claude Desktop
+
+This server currently provides Streamable HTTP only. Claude Desktop's
+`claude_desktop_config.json` starts local stdio servers, so adding this
+repository as a `command` entry will not work; this repository does not ship a
+stdio bridge.
+
+To connect a self-hosted, authenticated deployment, open Claude Desktop's
+**Settings → Connectors → Add custom connector** and enter the complete HTTPS
+MCP URL, including `/mcp`:
+
+```text
+https://mcp.example.com/mcp
+```
+
+Complete the authentication flow provided by that deployment. The current
+maintainer demo endpoint is unauthenticated and temporary, so do not use it as
+a production Claude connector. Keep `YAHOO_SHOPPING_APP_ID` on the MCP server
+and never place it in Claude Desktop configuration.
+
+For local development, start the server and verify the endpoint with [MCP
+Inspector](docs/VERIFICATION.md#mcp-inspector):
+
+```bash
+YAHOO_SHOPPING_APP_ID="your-app-id" make run
+```
+
+The endpoint is `http://127.0.0.1:8000/mcp`. Direct local Claude Desktop
+integration would require a separate stdio adapter, which is not included in
+this project. See the MCP documentation for [local
+servers](https://modelcontextprotocol.io/docs/develop/connect-local-servers)
+and [remote servers](https://modelcontextprotocol.io/docs/develop/connect-remote-servers).
+
 ## Using the tool
 
 Use the endpoint you started from ChatGPT Developer Mode or another MCP
