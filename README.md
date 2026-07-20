@@ -29,6 +29,9 @@ These URLs are provided for demonstration and connectivity checks only. They
 are not an official Yahoo! or OpenAI service and are not guaranteed to be
 online, stable, supported, private, or available to any particular user.
 
+The current registry and directory publication status is tracked in
+[docs/PUBLICATION.md](docs/PUBLICATION.md).
+
 This is a community implementation. Before using it, independently review the
 current Yahoo! Developer Network and Yahoo! Shopping API terms, quotas,
 attribution requirements, content restrictions, and any rules applicable to

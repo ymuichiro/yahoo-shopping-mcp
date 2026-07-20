@@ -34,7 +34,7 @@ Pushes of version tags (`v*`) publish a container image to GitHub Container
 Registry. The image tag matches the Git tag, for example:
 
 ```bash
-docker pull ghcr.io/ymuichiro/yahoo-shopping-mcp:v0.9.0-preview.1
+docker pull ghcr.io/ymuichiro/yahoo-shopping-mcp:v0.9.0-preview.2
 ```
 
 The workflow also supports manually rebuilding an existing tag when the
