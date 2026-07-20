@@ -13,7 +13,6 @@
     {
       "registryType": "oci",
       "identifier": "ghcr.io/ymuichiro/yahoo-shopping-mcp:v0.9.0-preview.2",
-      "version": "0.9.0-preview.2",
       "transport": {
         "type": "streamable-http",
         "url": "http://localhost:8000/mcp"
