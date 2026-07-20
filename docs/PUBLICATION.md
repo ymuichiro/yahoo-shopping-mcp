@@ -15,6 +15,18 @@ does not mean that a shared production endpoint is available.
 | [Glama OSS Server](https://glama.ai/mcp/servers?query=yahoo-shopping-mcp) | **Pending review** | Source submission: [`ymuichiro/yahoo-shopping-mcp`](https://github.com/ymuichiro/yahoo-shopping-mcp). Ownership metadata is in [`glama.json`](../glama.json). The repository submission is pending review and is not publicly listed yet. |
 | [MCP.Directory](https://mcp.directory/submit) | **Submitted / pending review** | Submitted with the public GitHub repository URL. Publication is performed after directory review. |
 
+## Evidence of Glama submission
+
+On **2026-07-20**, after submitting the repository through the authenticated
+Glama **OSS Server** form, the form reported:
+
+> A submission for this repository is already pending review
+
+This confirms that Glama accepted the repository into its review queue. It is
+not approval or public listing: the server search and Glama server API did not
+yet expose a public server page at the time of verification. No submission ID
+or approval timestamp was provided by Glama.
+
 ## Intentionally not published
 
 - A production remote endpoint is **not** registered. [`server.json`](../server.json)
