@@ -125,6 +125,35 @@ The default local Compose endpoint is
 `http://127.0.0.1:18000/mcp`. See [Deployment](docs/DEPLOYMENT.md) for a
 production-oriented container and reverse-proxy checklist.
 
+To run the container directly without Compose, build the image and publish the
+container's port to loopback:
+
+```bash
+docker build --tag yahoo-shopping-mcp:local .
+docker run --rm \
+  --name yahoo-shopping-mcp \
+  --publish 127.0.0.1:18000:8000 \
+  --env YAHOO_SHOPPING_APP_ID="your-app-id" \
+  --volume yahoo-shopping-mcp-data:/data \
+  yahoo-shopping-mcp:local
+```
+
+The MCP endpoint is `http://127.0.0.1:18000/mcp` and the health check is
+`http://127.0.0.1:18000/healthz`. To use a published versioned preview image,
+replace the local build with a specific tag from [GitHub Container
+Registry](https://github.com/ymuichiro/yahoo-shopping-mcp/pkgs/container/yahoo-shopping-mcp):
+
+```bash
+CONTAINER_IMAGE="ghcr.io/ymuichiro/yahoo-shopping-mcp:v0.9.0-preview.2"
+docker pull "$CONTAINER_IMAGE"
+docker run --rm \
+  --name yahoo-shopping-mcp \
+  --publish 127.0.0.1:18000:8000 \
+  --env YAHOO_SHOPPING_APP_ID="your-app-id" \
+  --volume yahoo-shopping-mcp-data:/data \
+  "$CONTAINER_IMAGE"
+```
+
 For direct application startup, use the `YAHOO_SHOPPING_MCP_*` environment
 variables. Compose maps its convenience variables `ALLOWED_HOSTS` and
 `ALLOWED_ORIGINS` to the application settings.

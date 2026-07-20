@@ -57,6 +57,31 @@ make up
 
 Composeのローカルエンドポイントは`http://127.0.0.1:18000/mcp`です。会社や本番環境で利用する場合のコンテナ、リバースプロキシ、Host/Origin設定は [Deployment](DEPLOYMENT.md) を参照してください。
 
+Composeを使わずにコンテナを直接起動する場合は、イメージをビルドしてコンテナのポートをloopbackへ公開します。
+
+```bash
+docker build --tag yahoo-shopping-mcp:local .
+docker run --rm \
+  --name yahoo-shopping-mcp \
+  --publish 127.0.0.1:18000:8000 \
+  --env YAHOO_SHOPPING_APP_ID="your-app-id" \
+  --volume yahoo-shopping-mcp-data:/data \
+  yahoo-shopping-mcp:local
+```
+
+MCPエンドポイントは`http://127.0.0.1:18000/mcp`、ヘルスチェックは`http://127.0.0.1:18000/healthz`です。タグ付きのプレビューイメージを使う場合は、[GitHub Container Registry](https://github.com/ymuichiro/yahoo-shopping-mcp/pkgs/container/yahoo-shopping-mcp)から特定のタグをpullします。
+
+```bash
+CONTAINER_IMAGE="ghcr.io/ymuichiro/yahoo-shopping-mcp:v0.9.0-preview.2"
+docker pull "$CONTAINER_IMAGE"
+docker run --rm \
+  --name yahoo-shopping-mcp \
+  --publish 127.0.0.1:18000:8000 \
+  --env YAHOO_SHOPPING_APP_ID="your-app-id" \
+  --volume yahoo-shopping-mcp-data:/data \
+  "$CONTAINER_IMAGE"
+```
+
 直接起動する場合は`YAHOO_SHOPPING_MCP_*`環境変数を使用します。Composeでは利便性のため`ALLOWED_HOSTS`と`ALLOWED_ORIGINS`をアプリケーションの設定へ変換します。
 
 ## 任意のCloudflare Tunnel
