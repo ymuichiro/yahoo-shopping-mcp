@@ -1,0 +1,31 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ymuichiro/yahoo-shopping-mcp",
+  "title": "Yahoo! Shopping MCP",
+  "description": "Read-only Yahoo! Shopping product search via the Yahoo! Shopping Item Search API v3.",
+  "version": "0.9.0-preview.2",
+  "repository": {
+    "url": "https://github.com/ymuichiro/yahoo-shopping-mcp",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/ymuichiro/yahoo-shopping-mcp",
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/ymuichiro/yahoo-shopping-mcp:v0.9.0-preview.2",
+      "version": "0.9.0-preview.2",
+      "transport": {
+        "type": "streamable-http",
+        "url": "http://localhost:8000/mcp"
+      },
+      "environmentVariables": [
+        {
+          "name": "YAHOO_SHOPPING_APP_ID",
+          "description": "Yahoo! JAPAN application ID.",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

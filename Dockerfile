@@ -16,6 +16,8 @@ RUN uv sync --frozen --no-dev
 
 FROM python:3.12-slim
 
+LABEL io.modelcontextprotocol.server.name="io.github.ymuichiro/yahoo-shopping-mcp"
+
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV YAHOO_SHOPPING_MCP_HOST=0.0.0.0
