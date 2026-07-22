@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.ymuichiro/yahoo-shopping-mcp",
   "title": "Yahoo! Shopping MCP",
-  "description": "Read-only Yahoo! Shopping product search via the Yahoo! Shopping Item Search API v3.",
+  "description": "Read-only Yahoo! Shopping product search via the Yahoo! Shopping Item Search API v3. Supports keyword and JAN-code search with price, stock, condition, shipping, sorting, category, brand, seller, image-size, and pagination filters.",
   "version": "0.9.0-preview.2",
   "repository": {
     "url": "https://github.com/ymuichiro/yahoo-shopping-mcp",

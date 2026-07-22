@@ -1,8 +1,12 @@
 # Yahoo! Shopping MCP
 
-An open-source, community-maintained MCP server for the Yahoo! Shopping Item
-Search API v3. It provides read-only product search through Streamable HTTP and
+An open-source, community-maintained MCP server for read-only Yahoo! Shopping
+product search through the Yahoo! Shopping Item Search API v3. Search by
+keyword or JAN code with price, stock, condition, shipping, sorting, category,
+brand, seller, image-size, and pagination filters. It uses Streamable HTTP and
 can be run locally or self-hosted with Docker.
+
+[![yahoo-shopping-mcp MCP server](https://glama.ai/mcp/servers/ymuichiro/yahoo-shopping-mcp/badges/card.svg)](https://glama.ai/mcp/servers/ymuichiro/yahoo-shopping-mcp)
 
 This is not an official Yahoo! Shopping, LINE Yahoo, or OpenAI service. The
 maintainers do not represent, endorse, operate, or guarantee Yahoo! Shopping,
