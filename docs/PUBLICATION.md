@@ -4,7 +4,7 @@ This file records where `yahoo-shopping-mcp` has been registered or published.
 It is intentionally separate from deployment instructions: a directory listing
 does not mean that a shared production endpoint is available.
 
-最終確認日: **2026-07-22**
+最終確認日: **2026-07-25**
 
 ## Current records
 
@@ -39,6 +39,40 @@ This confirms publication of the OSS listing. It does not confirm a Glama
 release, a hosted remote endpoint, or successful Yahoo API execution from
 Glama. The page currently reports no Glama release and does not offer an
 installable hosted server.
+
+## Glama post-publication follow-up
+
+On **2026-07-25**, the maintainer completed the Glama ownership handoff in a
+logged-in Chrome session. The server admin pages became available and the
+claim dialog disappeared, confirming that the server is claimed. No Yahoo
+credentials were entered into Glama.
+
+The following public metadata was saved in Glama:
+
+- Category: `E-commerce & Retail`
+- Existing name and read-only Yahoo! Shopping API description retained
+- A related-server suggestion was submitted for `shopping-radar`
+
+The following Glama verification work is still asynchronous and is recorded
+here as pending rather than successful:
+
+- Repository sync was started, but the admin page still showed `Sync in
+  Progress`, last synced `2026-07-24 19:44`, and last commit `06f4b3c` at the
+  latest check. The local repository head is `cc2e9b1`.
+- A Docker build test was submitted with ID
+  `019f977d-0f1a-7e65-bee0-c9c197f3579f` and remained `pending` at the latest
+  check.
+- The build specification used Debian Trixie, Python 3.12,
+  `uv sync --frozen --no-dev`, and
+  `.venv/bin/yahoo-shopping-mcp` behind `mcp-proxy`. The required
+  `YAHOO_SHOPPING_APP_ID` was declared as a sensitive environment variable;
+  only the non-secret placeholder `glama-check-placeholder` was supplied for
+  startup verification.
+
+Until the sync and build test complete, Glama still reports no Glama release;
+Server Coherence and Tool Definition Quality therefore remain unavailable.
+The no-recent-usage indicator also remains expected until a usable Glama
+release is available and a safe test call can be made.
 
 ## Intentionally not published
 
