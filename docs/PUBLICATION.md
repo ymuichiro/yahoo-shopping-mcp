@@ -59,6 +59,9 @@ here as pending rather than successful:
 - Repository sync was started, but the admin page still showed `Sync in
   Progress`, last synced `2026-07-24 19:44`, and last commit `06f4b3c` at the
   latest check. The local repository head is `cc2e9b1`.
+- This follow-up record was committed afterward as `aa250b7`; a later
+  successful Glama sync is needed to include that commit in the directory
+  snapshot.
 - A Docker build test was submitted with ID
   `019f977d-0f1a-7e65-bee0-c9c197f3579f` and remained `pending` at the latest
   check.
