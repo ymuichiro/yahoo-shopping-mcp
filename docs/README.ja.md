@@ -133,6 +133,35 @@ MCPのStreamable HTTPを`/mcp`で提供します。`GET /`と`GET /healthz`は�
 
 完全な入力・出力仕様は [API仕様](API.md) を参照してください。商品データは`content[0].text`の`results`に、カルーセル用データは`structuredContent.products`に返します。
 
+## 任意のAgentic Memory
+
+Agentic Memoryは既定で無効です。`disabled`ではMemory用Tool／Resourceを登録せず、Neo4jへ接続せず、既存の`search_products`の動作も変更しません。
+
+有効化できるのは、専用インスタンス向けの`single_user`だけです。主体はサーバー側の固定subject IDで決まり、クライアントから指定できません。このサーバーにはMCP認証がないため、共有環境やインターネットへ公開したエンドポイントでMemoryを有効にしないでください。`multi_user`モードはありません。
+
+```env
+YAHOO_SHOPPING_MCP_MEMORY_MODE=single_user
+YAHOO_SHOPPING_MCP_MEMORY_SUBJECT_ID=local-default
+YAHOO_SHOPPING_MCP_MEMORY_REQUIRE_PREVIEW=true
+YAHOO_SHOPPING_MCP_MEMORY_OBSERVATION_TTL_SECONDS=86400
+YAHOO_SHOPPING_MCP_MEMORY_MUTATION_TTL_SECONDS=3600
+YAHOO_SHOPPING_MCP_MEMORY_MAX_SPACES_PER_QUERY=5
+YAHOO_SHOPPING_MCP_MEMORY_MAX_CLAIM_CANDIDATES=30
+YAHOO_SHOPPING_MCP_MEMORY_MAX_SUBGRAPH_NODES=100
+YAHOO_SHOPPING_MCP_MEMORY_MAX_SUBGRAPH_EDGES=250
+YAHOO_SHOPPING_MCP_MEMORY_MAX_DEPTH=3
+NEO4J_URI=neo4j://neo4j:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=replace-with-secret
+NEO4J_DATABASE=neo4j
+```
+
+`YAHOO_SHOPPING_MCP_MEMORY_REQUIRE_PREVIEW`は必ず`true`にし、TTLと取得上限は正の整数にします。取得上限はSpace 50件、Claim候補100件、Node 100件、Edge 250件、深度3を超えられません。`single_user`で固定subjectまたはNeo4j認証情報が不足している場合は起動設定を拒否します。
+
+保存対象は固定オントロジーに従う短い購買嗜好Claim、Concept、Context、Evidence要約、変更履歴です。任意Cypher、任意ラベル／Relation、クライアント発行の永続ID、会話全文、機微情報は受け付けません。書き込みはPreviewと明示確認後のApplyに限定し、商品検索だけで長期Claimを自動作成したり、Memoryから`search_products`の引数を自動変更したりしません。
+
+Tool／Resource仕様は [API仕様](API.md)、保持と削除は [データ取り扱い](DATA_HANDLING.md)、Neo4jの運用要件は [Deployment](DEPLOYMENT.md) を参照してください。
+
 ## 安全性・プライバシー・規約
 
 このサーバーは検索専用で、購入、注文、決済、アカウント変更は行いません。商品分類フィルタは保守的な実装であり、完全な分類や法令遵守を保証するものではありません。

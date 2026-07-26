@@ -62,6 +62,48 @@ Do not use a wildcard unless it is an intentional, reviewed deployment
 choice. These settings are host/origin protections, not user authentication.
 The server does not implement MCP login, OAuth, JWT, or per-user accounts.
 
+## Optional single-user memory
+
+Memory defaults to `disabled`, which requires no Neo4j service and preserves
+the existing product-search deployment. Enable `single_user` only for one
+trusted subject on a dedicated, access-controlled instance:
+
+```env
+YAHOO_SHOPPING_MCP_MEMORY_MODE=single_user
+YAHOO_SHOPPING_MCP_MEMORY_SUBJECT_ID=local-default
+YAHOO_SHOPPING_MCP_MEMORY_REQUIRE_PREVIEW=true
+YAHOO_SHOPPING_MCP_MEMORY_OBSERVATION_TTL_SECONDS=86400
+YAHOO_SHOPPING_MCP_MEMORY_MUTATION_TTL_SECONDS=3600
+YAHOO_SHOPPING_MCP_MEMORY_MAX_SPACES_PER_QUERY=5
+YAHOO_SHOPPING_MCP_MEMORY_MAX_CLAIM_CANDIDATES=30
+YAHOO_SHOPPING_MCP_MEMORY_MAX_SUBGRAPH_NODES=100
+YAHOO_SHOPPING_MCP_MEMORY_MAX_SUBGRAPH_EDGES=250
+YAHOO_SHOPPING_MCP_MEMORY_MAX_DEPTH=3
+NEO4J_URI=neo4j://neo4j:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=replace-with-secret
+NEO4J_DATABASE=neo4j
+```
+
+All TTL and query-bound settings must be positive. The hard safety ceilings are
+50 spaces, 100 claim candidates, 100 subgraph nodes, 250 subgraph edges, and
+depth 3.
+`YAHOO_SHOPPING_MCP_MEMORY_REQUIRE_PREVIEW` must remain `true`; startup
+configuration fails when single-user identity or Neo4j credentials are
+missing. The subject ID is fixed by the server and must not come from MCP tool
+arguments.
+
+Operate Neo4j on a private network. Do not expose Bolt `7687` or Neo4j HTTP
+`7474` to MCP clients or the public internet. Store credentials in the
+deployment platform's secret facility, use persistent encrypted storage and
+backups appropriate to the data, set resource limits and health probes, and
+test export/deletion and restoration procedures. The repository's default
+Compose stack does not provision Neo4j or enable memory.
+
+This implementation does not add a production or local-k3s deployment. Any
+future cluster rollout requires a separate review of authentication, network
+policy, Secrets, persistence, backup, retention, and subject isolation.
+
 ## Optional Cloudflare Tunnel
 
 The optional `cloudflared` Compose profile uses a token and a tunnel configured
@@ -94,6 +136,9 @@ infrastructure for any real deployment.
   users of the deployment; it has no built-in authentication.
 - Review global and Yahoo request-rate settings before sharing the endpoint.
 - Protect `/data`, cache files, database state, and proxy/container logs.
+- If memory is enabled, keep the instance single-user and private; protect
+  Neo4j credentials and storage, verify Preview/Apply confirmation, and test
+  bounded export and deletion.
 - Publish deployment-specific privacy, retention, support, and incident
   contact information.
 - Check `GET /healthz`, MCP `initialize`, `tools/list`, and a safe

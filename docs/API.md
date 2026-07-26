@@ -41,3 +41,55 @@ The tool only searches products. It does not purchase items, place orders, or mo
 - Diagnostic data, upstream response bodies, credentials, and request identifiers are not returned.
 
 Searches and products that match the safety policy are rejected or filtered before they are returned.
+
+## Optional Agentic Memory
+
+Memory mode defaults to `disabled`. Disabled mode registers no memory tools or
+resources and leaves the `search_products` contract above unchanged. The only
+enabled mode is `single_user`, which uses the operator-configured
+`YAHOO_SHOPPING_MCP_MEMORY_SUBJECT_ID`; callers cannot choose a subject.
+`multi_user` is not supported.
+
+Single-user mode exposes these resources:
+
+- `memory://yahoo-shopping/schema/v1`: fixed ontology, enums, relation
+  domain/range, and constraints
+- `memory://yahoo-shopping/instructions/v1`: staged read and
+  preview/confirmation/apply workflow
+- `memory://yahoo-shopping/profile/current/summary`: bounded current-profile
+  summary, not a full graph dump
+
+It exposes the following bounded MCP tools:
+
+| Tool | Effect |
+|---|---|
+| `get_preference_memory_schema` | Read the fixed ontology |
+| `route_memory_spaces` | Find relevant Memory Spaces |
+| `search_claim_candidates` | Find existing Claim, Rule, or Context candidates |
+| `get_claim_neighborhood` | Read a bounded local graph with a snapshot |
+| `get_preference_graph` | Read an explicitly bounded partial graph |
+| `preview_preference_memory_update` | Validate and stage a mutation without changing the active graph |
+| `apply_preference_memory_update` | Apply a non-expired preview after explicit confirmation |
+| `export_preference_memory` | Export the fixed subject's memory |
+| `delete_preference_memory` | Delete or retire an explicitly selected scope |
+
+Tool schemas expose the fixed node, relation, kind, operation, and status
+enums. Inputs do not accept Cypher, arbitrary labels or relations, a subject
+ID, server-generated IDs for new nodes, or unbounded graph reads.
+
+All mutations follow Route → Search → Neighborhood → Preview → confirmation →
+Apply. Preview performs domain/range, self-loop, cycle, duplicate, conflicting
+rule, evidence/source, subject-isolation, revision/snapshot, limit, and privacy
+checks. Apply requires `confirmation=true`, a matching preview hash, an
+unexpired mutation, and the current profile revision. Preview never changes
+the active graph, returns a bounded text-free SVG summary for supporting hosts,
+and repeated Apply calls are idempotent.
+
+Memory errors use stable `memory_*` kinds, including validation, schema,
+relation, domain/range, cycle, duplicate, ambiguous target, revision,
+snapshot, expiry, preview hash, confirmation, limit, not-found, and privacy
+errors. Error payloads are bounded and do not expose credentials, Cypher,
+database internals, full evidence text, or transcripts.
+
+The memory read path does not automatically rewrite `search_products`
+arguments. Product searches do not automatically create long-term Claims.
