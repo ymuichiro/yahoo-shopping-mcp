@@ -4,7 +4,7 @@ This file records where `yahoo-shopping-mcp` has been registered or published.
 It is intentionally separate from deployment instructions: a directory listing
 does not mean that a shared production endpoint is available.
 
-最終確認日: **2026-07-25**
+最終確認日: **2026-08-01**
 
 ## Current records
 
@@ -12,7 +12,8 @@ does not mean that a shared production endpoint is available.
 | --- | --- | --- |
 | [Official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.ymuichiro%2Fyahoo-shopping-mcp) | **Active** | Server `io.github.ymuichiro/yahoo-shopping-mcp`, version `0.9.0-preview.2`. Metadata is defined in [`server.json`](../server.json). |
 | [GitHub Container Registry](https://github.com/ymuichiro/yahoo-shopping-mcp/pkgs/container/yahoo-shopping-mcp) | **Published** | `ghcr.io/ymuichiro/yahoo-shopping-mcp:v0.9.0-preview.2`. This is a self-hosted distribution artifact, not a shared endpoint. |
-| [Glama OSS Server](https://glama.ai/mcp/servers/ymuichiro/yahoo-shopping-mcp) | **Published / publicly listed** | Public server page for [`ymuichiro/yahoo-shopping-mcp`](https://github.com/ymuichiro/yahoo-shopping-mcp). Glama server ID: `l465au1oto`. Ownership metadata is in [`glama.json`](../glama.json). At the latest check, the listing had no Glama release yet, so it is a directory listing rather than a Glama-hosted endpoint. |
+| [Glama OSS Server](https://glama.ai/mcp/servers/ymuichiro/yahoo-shopping-mcp) | **Published / publicly listed** | Public server page for [`ymuichiro/yahoo-shopping-mcp`](https://github.com/ymuichiro/yahoo-shopping-mcp). Glama server ID: `l465au1oto`. Ownership metadata is in [`glama.json`](../glama.json). |
+| [Glama Managed Release](https://glama.ai/mcp/servers/ymuichiro/yahoo-shopping-mcp/admin/dockerfile/releases#release-0.9.0-preview.3) | **Published / latest** | Release `0.9.0-preview.3`, image `registry.glama.ai/mcp-l465au1oto:nxe0spah8z`. It was created and published on 2026-08-01 from commit `0eeca0eed70aff73c893ae0c4ea3d90af0b188cd`; the successful Build Test is [`019fbb14-4206-70ab-ba81-2270aa13894d`](https://glama.ai/mcp/servers/ymuichiro/yahoo-shopping-mcp/admin/dockerfile/tests/019fbb14-4206-70ab-ba81-2270aa13894d). |
 | [MCP.Directory](https://mcp.directory/submit) | **Submitted / pending review** | Submitted with the public GitHub repository URL. Publication is performed after directory review. |
 
 ## Evidence of Glama submission
@@ -35,10 +36,9 @@ The page is publicly accessible as **Yahoo! Shopping MCP** by `ymuichiro` and
 is linked to this GitHub repository. The public record exposes Glama server ID
 `l465au1oto`.
 
-This confirms publication of the OSS listing. It does not confirm a Glama
-release, a hosted remote endpoint, or successful Yahoo API execution from
-Glama. The page currently reports no Glama release and does not offer an
-installable hosted server.
+This confirms publication of the OSS listing. A Glama managed release was
+created later; this listing and the managed release are recorded separately
+because a directory listing alone does not prove a hosted endpoint.
 
 ## Glama post-publication follow-up
 
@@ -53,29 +53,29 @@ The following public metadata was saved in Glama:
 - Existing name and read-only Yahoo! Shopping API description retained
 - A related-server suggestion was submitted for `shopping-radar`
 
-The following Glama verification work is still asynchronous and is recorded
-here as pending rather than successful:
+On **2026-08-01**, the repository sync completed and Glama reported head
+commit `0eeca0e`. The managed build specification used:
 
-- Repository sync was started, but the admin page still showed `Sync in
-  Progress`, last synced `2026-07-24 19:44`, and last commit `06f4b3c` at the
-  latest check. The local repository head is `cc2e9b1`.
-- This follow-up record was committed afterward as `aa250b7`; a later
-  successful Glama sync is needed to include that commit in the directory
-  snapshot.
-- A Docker build test was submitted with ID
-  `019f977d-0f1a-7e65-bee0-c9c197f3579f` and remained `pending` at the latest
-  check.
-- The build specification used Debian Trixie, Python 3.12,
-  `uv sync --frozen --no-dev`, and
-  `.venv/bin/yahoo-shopping-mcp` behind `mcp-proxy`. The required
-  `YAHOO_SHOPPING_APP_ID` was declared as a sensitive environment variable;
-  only the non-secret placeholder `glama-check-placeholder` was supplied for
-  startup verification.
+- Base image: `debian:trixie-slim`
+- Build step: `uv sync`
+- CMD arguments: `['uv', 'run', 'yahoo-shopping-mcp-stdio']`
+- Effective Glama command: `mcp-proxy -- uv run yahoo-shopping-mcp-stdio`
+- Pinned commit: `0eeca0eed70aff73c893ae0c4ea3d90af0b188cd`
 
-Until the sync and build test complete, Glama still reports no Glama release;
-Server Coherence and Tool Definition Quality therefore remain unavailable.
-The no-recent-usage indicator also remains expected until a usable Glama
-release is available and a safe test call can be made.
+The first test with this specification failed because Glama's Docker builder
+timed out while resolving `debian:trixie-slim` metadata. A retry succeeded:
+
+- Successful Build Test: [`019fbb14-4206-70ab-ba81-2270aa13894d`](https://glama.ai/mcp/servers/ymuichiro/yahoo-shopping-mcp/admin/dockerfile/tests/019fbb14-4206-70ab-ba81-2270aa13894d)
+- Result: `success`
+- Observed checks: MCP `initialize`, `tools/list`, `prompts/list`, and
+  `resources/list` completed through the stdio process and Glama's proxy.
+- Published release: `0.9.0-preview.3`, image
+  `registry.glama.ai/mcp-l465au1oto:nxe0spah8z`
+
+No real Yahoo application ID was entered into Glama, so a real Yahoo API
+product search was intentionally not performed. The build and MCP protocol
+startup checks are confirmed; Gateway endpoint deployment and a production
+credential-backed tool call remain separate follow-up work.
 
 ## Intentionally not published
 
@@ -83,10 +83,9 @@ release is available and a safe test call can be made.
   intentionally has no `remotes` entry.
 - The maintainer-provided demo endpoint remains demonstration-only and is not a
   supported shared service. See [DEPLOYMENT.md](DEPLOYMENT.md).
-- Glama Gateway or another Glama-hosted release has not been deployed yet. The
-  OSS listing is public, but the intended next order is private deployment,
-  Secret configuration, authenticated MCP verification, and only then a
-  limited-access release.
+- The Glama managed release is published, but no separate public Gateway
+  endpoint URL or production secret deployment is recorded yet. The release
+  image must not be treated as evidence of a credential-backed Yahoo API call.
 - No Smithery, PulseMCP, or other marketplace submission has been made as part
   of this record.
 
@@ -99,21 +98,23 @@ The intended Glama managed transport split is now implemented:
   `['uv', 'run', 'yahoo-shopping-mcp-stdio']`. Glama's build wrapper turns this
   into the effective `mcp-proxy -- uv run yahoo-shopping-mcp-stdio` command.
 
-The stdio entrypoint is part of the repository, but no Glama managed release
-has been claimed successful until a new build test succeeds and a release is
-created. Record the test ID, release version, deployment identifier, and
-verification results below after that happens.
+The stdio entrypoint is part of the repository and is the command used by the
+published Glama managed release. Self-hosted local and Docker deployments
+continue to use the Streamable HTTP entrypoint.
 
 ## Glama hosted release checklist
 
-If a Glama-hosted release is intentionally created later, record the following
-in this file:
+For the published Glama managed release, this file records:
 
-1. Glama server page URL, server ID, and deployment identifier.
-2. Whether the deployment is private or public.
-3. The generated Gateway endpoint URL. Never record tokens or secret values.
+1. Glama server page URL, server ID, release version, image, and Build Test ID.
+2. The release is published as the latest managed release; no separate
+   Gateway deployment visibility has been confirmed.
+3. No Gateway endpoint URL is recorded because one has not been configured or
+   verified. Never record tokens or secret values.
 4. Secret name configured in Glama: `YAHOO_SHOPPING_APP_ID`.
-5. Verification date for `initialize`, `tools/list`, and a safe product search.
+5. Verification date and results for `initialize`, `tools/list`, `prompts/list`,
+   and `resources/list`; a real product search remains unverified without a
+   production credential.
 
 Do not promote the current unauthenticated demo endpoint in place of the Glama
 Gateway. Review [SECURITY.md](../SECURITY.md), [TERMS.md](../TERMS.md), and the
