@@ -90,6 +90,20 @@ release is available and a safe test call can be made.
 - No Smithery, PulseMCP, or other marketplace submission has been made as part
   of this record.
 
+## Glama managed transport split
+
+The intended Glama managed transport split is now implemented:
+
+- Self-hosted local/Docker distribution: `yahoo-shopping-mcp` with Streamable HTTP.
+- Glama managed build: `yahoo-shopping-mcp-stdio`, configured in Glama as
+  `['uv', 'run', 'yahoo-shopping-mcp-stdio']`. Glama's build wrapper turns this
+  into the effective `mcp-proxy -- uv run yahoo-shopping-mcp-stdio` command.
+
+The stdio entrypoint is part of the repository, but no Glama managed release
+has been claimed successful until a new build test succeeds and a release is
+created. Record the test ID, release version, deployment identifier, and
+verification results below after that happens.
+
 ## Glama hosted release checklist
 
 If a Glama-hosted release is intentionally created later, record the following

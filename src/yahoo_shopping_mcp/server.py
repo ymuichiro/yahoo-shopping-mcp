@@ -291,5 +291,9 @@ def main() -> None:
     create_mcp_server().run(transport="streamable-http")
 
 
+def main_stdio() -> None:
+    create_mcp_server().run(transport="stdio")
+
+
 if __name__ == "__main__":
     main()

@@ -9,7 +9,7 @@
 - Yahoo API 呼び出しのレート制御とキャッシュ
 - アプリケーション全体に対するグローバルレート制限
 
-サーバー本体は `FastMCP` を使っており、`Streamable HTTP` で公開します。公開 HTTP ルートは `/`, `/healthz`, `/mcp` のみです。`/` は `/healthz` と同じヘルス応答を返します。
+サーバー本体は `FastMCP` を使っています。通常のローカル起動・Docker・セルフホストは `Streamable HTTP` で公開し、Glama managed 用にstdio専用エントリポイントも提供します。公開 HTTP ルートは `/`, `/healthz`, `/mcp` のみです。`/` は `/healthz` と同じヘルス応答を返します。
 
 ## Common Commands
 
@@ -46,7 +46,7 @@
 ## Project Structure
 
 - `src/yahoo_shopping_mcp/server.py`
-  MCP サーバー生成、lifespan 管理、HTTP ルート、ツール定義
+  MCP サーバー生成、lifespan 管理、HTTP ルート、stdio/HTTPエントリポイント、ツール定義
 - `src/yahoo_shopping_mcp/yahoo_api.py`
   Yahoo API 呼び出し、直列レート制御、リトライ、レスポンス整形
 - `src/yahoo_shopping_mcp/storage.py`

@@ -3,8 +3,9 @@
 An open-source, community-maintained MCP server for read-only Yahoo! Shopping
 product search through the Yahoo! Shopping Item Search API v3. Search by
 keyword or JAN code with price, stock, condition, shipping, sorting, category,
-brand, seller, image-size, and pagination filters. It uses Streamable HTTP and
-can be run locally or self-hosted with Docker.
+brand, seller, image-size, and pagination filters. Local and self-hosted
+deployments use Streamable HTTP; a separate stdio entrypoint is provided for
+Glama managed hosting and local stdio clients.
 
 [![yahoo-shopping-mcp MCP server](https://glama.ai/mcp/servers/ymuichiro/yahoo-shopping-mcp/badges/card.svg)](https://glama.ai/mcp/servers/ymuichiro/yahoo-shopping-mcp)
 
@@ -71,7 +72,8 @@ SLA. It applies within one process; separate replicas need their own controls.
 
 ## Protocol and endpoints
 
-The server uses the MCP Streamable HTTP transport:
+The default `yahoo-shopping-mcp` entrypoint uses the MCP Streamable HTTP
+transport:
 
 - MCP endpoint: `/mcp`
 - Health endpoint: `GET /healthz`
@@ -82,6 +84,27 @@ The server is bound to loopback by default. An unauthenticated endpoint is not
 automatically an internet-public endpoint; if you expose it, add network,
 reverse-proxy, rate-limit, logging, and data-retention controls appropriate to
 your deployment.
+
+## Glama managed hosting
+
+Glama's managed OSS build starts the MCP process over stdio and exposes its
+managed endpoint through Glama's HTTP gateway. Configure the Glama Dockerfile
+admin page with these CMD arguments:
+
+```json
+["uv", "run", "yahoo-shopping-mcp-stdio"]
+```
+
+Glama adds its `mcp-proxy` wrapper around this command. The effective managed
+command is therefore equivalent to:
+
+```text
+mcp-proxy -- uv run yahoo-shopping-mcp-stdio
+```
+
+This repository's normal `yahoo-shopping-mcp` command and Dockerfile remain
+Streamable HTTP for self-hosting. Set `YAHOO_SHOPPING_APP_ID` in Glama's
+environment schema and use a non-production placeholder only for build checks.
 
 ## Local plugin package
 
@@ -189,10 +212,35 @@ infrastructure that you control.
 
 ## Claude Desktop
 
-This server currently provides Streamable HTTP only. Claude Desktop's
-`claude_desktop_config.json` starts local stdio servers, so adding this
-repository as a `command` entry will not work; this repository does not ship a
-stdio bridge.
+This repository provides two startup commands:
+
+- `yahoo-shopping-mcp`: Streamable HTTP for local or self-hosted deployments
+- `yahoo-shopping-mcp-stdio`: stdio for local stdio clients and Glama managed hosting
+
+To run the stdio entrypoint locally, add the following to
+`claude_desktop_config.json` after running `make sync-dev`. Replace the
+directory with the absolute path to this repository:
+
+```json
+{
+  "mcpServers": {
+    "yahoo-shopping": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "/absolute/path/to/yahoo-shopping-mcp",
+        "yahoo-shopping-mcp-stdio"
+      ],
+      "env": {
+        "YAHOO_SHOPPING_APP_ID": "your-app-id"
+      }
+    }
+  }
+}
+```
+
+Keep the Yahoo Client ID in the server environment and never commit it.
 
 To connect a self-hosted, authenticated deployment, open Claude Desktop's
 **Settings → Connectors → Add custom connector** and enter the complete HTTPS
@@ -214,9 +262,8 @@ Inspector](docs/VERIFICATION.md#mcp-inspector):
 YAHOO_SHOPPING_APP_ID="your-app-id" make run
 ```
 
-The endpoint is `http://127.0.0.1:8000/mcp`. Direct local Claude Desktop
-integration would require a separate stdio adapter, which is not included in
-this project. See the MCP documentation for [local
+The Streamable HTTP endpoint is `http://127.0.0.1:8000/mcp`. See the MCP
+documentation for [local
 servers](https://modelcontextprotocol.io/docs/develop/connect-local-servers)
 and [remote servers](https://modelcontextprotocol.io/docs/develop/connect-remote-servers).
 

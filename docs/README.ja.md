@@ -1,6 +1,6 @@
 # Yahoo! Shopping MCP（日本語）
 
-Yahoo!ショッピング商品検索API v3を利用する、コミュニティ開発のオープンソースMCPサーバーです。MCPのStreamable HTTPで読み取り専用の商品検索を提供します。
+Yahoo!ショッピング商品検索API v3を利用する、コミュニティ開発のオープンソースMCPサーバーです。セルフホストではMCPのStreamable HTTPを使用し、Glama managedとローカルstdioクライアント向けにstdioエントリポイントも提供します。
 
 このプロジェクトはYahoo!ショッピング、LINEヤフー株式会社、OpenAIの公式サービスではありません。提携、承認、保証、公式実装であることを示すものではありません。
 
@@ -103,9 +103,49 @@ ALLOWED_ORIGINS=https://mcp.example.com
 
 開発者が使う検証用TunnelのURLを、利用者向けの常時稼働サービスや公式サービスとみなさないでください。継続利用には自分のサーバー、ドメイン、Tunnelまたはリバースプロキシを用意してください。
 
+## Glama managedでの起動
+
+Glama managedのOSSビルドでは、MCPプロセスをstdioで起動し、Glama側のHTTPゲートウェイから公開します。GlamaのDockerfile管理画面の`CMD arguments`には次を指定します。
+
+```json
+["uv", "run", "yahoo-shopping-mcp-stdio"]
+```
+
+Glamaが`mcp-proxy`を自動的に付加するため、実効的な起動コマンドは次と同等です。
+
+```text
+mcp-proxy -- uv run yahoo-shopping-mcp-stdio
+```
+
+通常の`yahoo-shopping-mcp`コマンド、Dockerfile、Composeは変更せず、セルフホスト用のStreamable HTTPとして使用します。Glamaのビルドチェックには本番ではないプレースホルダーを使い、実際の`YAHOO_SHOPPING_APP_ID`は登録画面へ入力しないでください。
+
 ## Claude Desktopでの設定
 
-このサーバーが提供する通信方式はStreamable HTTPのみです。Claude Desktopの`claude_desktop_config.json`はローカルのstdioサーバーを起動するための設定なので、このリポジトリを`command`として登録しても動作しません。このリポジトリにはstdioブリッジを含めていません。
+このリポジトリには次の2つの起動コマンドがあります。
+
+- `yahoo-shopping-mcp`: セルフホスト用のStreamable HTTP
+- `yahoo-shopping-mcp-stdio`: stdioクライアントおよびGlama managed用
+
+ローカルのClaude Desktopからstdioで接続する場合は、`make sync-dev`の後、`claude_desktop_config.json`に次を追加します。リポジトリの絶対パスへ置き換えてください。
+
+```json
+{
+  "mcpServers": {
+    "yahoo-shopping": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "/absolute/path/to/yahoo-shopping-mcp",
+        "yahoo-shopping-mcp-stdio"
+      ],
+      "env": {
+        "YAHOO_SHOPPING_APP_ID": "your-app-id"
+      }
+    }
+  }
+}
+```
 
 自分で運用する認証済みのリモート環境へ接続する場合は、Claude Desktopの**Settings → Connectors → Add custom connector**を開き、`/mcp`まで含むHTTPSのMCP URLを入力してください。
 
@@ -115,7 +155,7 @@ https://mcp.example.com/mcp
 
 接続先が提供する認証フローを完了してください。開発者が共有する検証用エンドポイントは、認証のない一時的なURLであり、本番用のClaudeコネクタとして使用しないでください。`YAHOO_SHOPPING_APP_ID`はMCPサーバー側にだけ設定し、Claude Desktopの設定へ入力しないでください。
 
-ローカル開発では`YAHOO_SHOPPING_APP_ID=... make run`でサーバーを起動し、`http://127.0.0.1:8000/mcp`を[MCP Inspector](VERIFICATION.md#mcp-inspector)で確認できます。Claude Desktopからローカル接続するには別途stdioアダプターが必要で、このプロジェクトには含まれていません。詳細はMCP公式ドキュメントの[ローカルサーバー接続](https://modelcontextprotocol.io/docs/develop/connect-local-servers)と[リモートサーバー接続](https://modelcontextprotocol.io/docs/develop/connect-remote-servers)を参照してください。
+ローカルのStreamable HTTPは`YAHOO_SHOPPING_APP_ID=... make run`で起動し、`http://127.0.0.1:8000/mcp`を[MCP Inspector](VERIFICATION.md#mcp-inspector)で確認できます。詳細はMCP公式ドキュメントの[ローカルサーバー接続](https://modelcontextprotocol.io/docs/develop/connect-local-servers)と[リモートサーバー接続](https://modelcontextprotocol.io/docs/develop/connect-remote-servers)を参照してください。
 
 ## MCPプロトコルと利用方法
 

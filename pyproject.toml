@@ -17,6 +17,7 @@ dev = [
 
 [project.scripts]
 yahoo-shopping-mcp = "yahoo_shopping_mcp.server:main"
+yahoo-shopping-mcp-stdio = "yahoo_shopping_mcp.server:main_stdio"
 
 [build-system]
 requires = ["hatchling>=1.27.0"]
