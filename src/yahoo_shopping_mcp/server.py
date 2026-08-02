@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 import json
 import logging
@@ -16,6 +17,9 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from yahoo_shopping_mcp.config import Settings, load_settings
+from yahoo_shopping_mcp.memory.cleanup import run_cleanup_loop
+from yahoo_shopping_mcp.memory.repository import PreferenceGraphRepository
+from yahoo_shopping_mcp.memory.tools import register_memory_surface
 from yahoo_shopping_mcp.models import ProductCarouselResponse, SearchProductsInput, SearchProductsResponse
 from yahoo_shopping_mcp.product_carousel import PRODUCT_CAROUSEL_HTML, PRODUCT_UI_META, PRODUCT_UI_URI
 from yahoo_shopping_mcp.storage import CacheStore, SQLiteStateStore, StoredRateLimitExceededError
@@ -50,6 +54,7 @@ def create_mcp_server(
     settings: Settings | None = None,
     *,
     http_client: httpx.AsyncClient | None = None,
+    memory_repository: PreferenceGraphRepository | None = None,
 ) -> FastMCP:
     resolved_settings = settings or load_settings()
     for logger_name in ("httpx", "httpcore"):
@@ -72,7 +77,43 @@ def create_mcp_server(
         resolved_settings.state_dir.mkdir(parents=True, exist_ok=True)
         resolved_settings.cache_dir.mkdir(parents=True, exist_ok=True)
         request_http_client = http_client or httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0))
+        resolved_memory_repository = memory_repository if resolved_settings.memory_mode == "single_user" else None
+        cleanup_stop: asyncio.Event | None = None
+        cleanup_task: asyncio.Task[None] | None = None
         try:
+            if resolved_settings.memory_mode == "single_user":
+                if resolved_memory_repository is None:
+                    from yahoo_shopping_mcp.memory.neo4j_repository import Neo4jPreferenceGraphRepository
+
+                    resolved_memory_repository = Neo4jPreferenceGraphRepository(
+                        uri=resolved_settings.neo4j_uri or "",
+                        user=resolved_settings.neo4j_user or "",
+                        password=resolved_settings.neo4j_password or "",
+                        database=resolved_settings.neo4j_database,
+                        mutation_ttl_seconds=resolved_settings.memory_mutation_ttl_seconds,
+                        observation_ttl_seconds=resolved_settings.memory_observation_ttl_seconds,
+                    )
+                try:
+                    await resolved_memory_repository.initialize()
+                except Exception:
+                    # Memory is opt-in and isolated: a Neo4j outage must not disable product search.
+                    logging.getLogger(__name__).warning("Agentic Memory initialization failed")
+                else:
+                    cleanup_stop = asyncio.Event()
+                    cleanup_task = asyncio.create_task(
+                        run_cleanup_loop(
+                            resolved_memory_repository,
+                            interval_seconds=max(
+                                30,
+                                min(
+                                    300,
+                                    resolved_settings.memory_mutation_ttl_seconds,
+                                    resolved_settings.memory_observation_ttl_seconds,
+                                ),
+                            ),
+                            stop=cleanup_stop,
+                        )
+                    )
             state_store = SQLiteStateStore(resolved_settings.state_dir)
             cache_store = CacheStore(resolved_settings.cache_dir, resolved_settings.cache_ttl_seconds)
             yahoo_client = YahooShoppingClient(
@@ -85,8 +126,18 @@ def create_mcp_server(
             yield {
                 "state_store": state_store,
                 "yahoo_client": yahoo_client,
+                "memory_repository": resolved_memory_repository,
             }
         finally:
+            if cleanup_stop is not None:
+                cleanup_stop.set()
+            if cleanup_task is not None:
+                await cleanup_task
+            if resolved_memory_repository is not None:
+                try:
+                    await resolved_memory_repository.close()
+                except Exception:
+                    logging.getLogger(__name__).warning("Agentic Memory repository close failed")
             if http_client is None:
                 await request_http_client.aclose()
 
@@ -283,6 +334,9 @@ def create_mcp_server(
             "price_fromとprice_toを両方指定する場合はprice_from <= price_to、"
             "start + results <= 1000である必要があります。"
         )
+
+    if resolved_settings.memory_mode == "single_user":
+        register_memory_surface(mcp, resolved_settings)
 
     return mcp
 

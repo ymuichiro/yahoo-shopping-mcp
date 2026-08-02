@@ -47,3 +47,24 @@ make test
 ```
 
 Tests use `httpx.MockTransport`; they do not call Yahoo in CI.
+
+## Agentic Memory checks
+
+The default test run covers disabled/single-user registration, fixed ontology
+schemas, validation, Preview/Apply contracts, repository preflight, output
+bounds, privacy filtering, and the unchanged `search_products` response.
+
+Run the real Neo4j integration test against a disposable private database:
+
+```bash
+NEO4J_TEST_URI=neo4j://127.0.0.1:7687 \
+NEO4J_TEST_USER=neo4j \
+NEO4J_TEST_PASSWORD=replace-with-test-password \
+uv run pytest -q tests/test_memory_neo4j_integration.py
+```
+
+The integration test creates a unique subject, verifies constraints/indexes,
+staged reads, Preview non-mutation, transactional/idempotent Apply, bounded
+export, source-deletion integrity, subject isolation, and idempotent deletion,
+then removes its test nodes. It is skipped when `NEO4J_TEST_URI` is absent.
+This procedure does not deploy to production or local k3s.

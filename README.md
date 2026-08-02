@@ -65,6 +65,8 @@ available at [assets/demo.mp4](assets/demo.mp4).
 - SQLite-backed application-wide rate limiting
 - MCP Apps product carousel with Yahoo attribution
 - Conservative filtering of restricted product terms and non-Yahoo URLs
+- Optional single-user Agentic Memory backed by Neo4j, with fixed ontology,
+  bounded reads, and preview-before-apply writes
 - `GET /`, `GET /healthz`, and Streamable HTTP MCP at `/mcp`
 
 The rate limiter is an application safeguard, not a Yahoo quota guarantee or an
@@ -305,12 +307,61 @@ The UI Resource is versioned as
 The server does not place orders, process payments, modify accounts, or
 guarantee product availability, prices, sellers, shipping, or legal compliance.
 
+## Optional Agentic Memory
+
+Agentic Memory is disabled by default. In that mode the server does not
+register memory tools or resources, connect to Neo4j, or change
+`search_products` behavior.
+
+The only enabled mode is `single_user`, intended for a dedicated instance with
+a fixed server-side subject ID. This project still has no MCP authentication,
+so do not enable memory on a shared or publicly accessible endpoint. There is
+no multi-user mode.
+
+To enable it, provide a private Neo4j instance and set:
+
+```env
+YAHOO_SHOPPING_MCP_MEMORY_MODE=single_user
+YAHOO_SHOPPING_MCP_MEMORY_SUBJECT_ID=local-default
+YAHOO_SHOPPING_MCP_MEMORY_REQUIRE_PREVIEW=true
+YAHOO_SHOPPING_MCP_MEMORY_OBSERVATION_TTL_SECONDS=86400
+YAHOO_SHOPPING_MCP_MEMORY_MUTATION_TTL_SECONDS=3600
+YAHOO_SHOPPING_MCP_MEMORY_MAX_SPACES_PER_QUERY=5
+YAHOO_SHOPPING_MCP_MEMORY_MAX_CLAIM_CANDIDATES=30
+YAHOO_SHOPPING_MCP_MEMORY_MAX_SUBGRAPH_NODES=100
+YAHOO_SHOPPING_MCP_MEMORY_MAX_SUBGRAPH_EDGES=250
+YAHOO_SHOPPING_MCP_MEMORY_MAX_DEPTH=3
+NEO4J_URI=neo4j://neo4j:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=replace-with-secret
+NEO4J_DATABASE=neo4j
+```
+
+`YAHOO_SHOPPING_MCP_MEMORY_REQUIRE_PREVIEW` is a safety invariant and must
+remain `true`. TTLs must be positive. Output limits must also be positive and
+cannot exceed 50 spaces, 100 claim candidates, 100 nodes, 250 edges, or depth
+3. Startup
+fails closed when single-user identity or Neo4j credentials are incomplete.
+
+Memory stores concise, typed purchasing claims, concepts, contexts, evidence
+summaries, and revisions. It does not accept client Cypher, arbitrary graph
+labels or relations, client-selected persistent IDs, full transcripts, or
+sensitive data. Writes use Preview followed by explicit confirmation and
+Apply. Search results are never converted into long-term claims
+automatically, and the server does not silently rewrite `search_products`
+arguments from memory.
+
+See [API contract](docs/API.md), [Data handling](docs/DATA_HANDLING.md), and
+[Deployment](docs/DEPLOYMENT.md) for the memory tools, retention rules, and
+private Neo4j requirements.
+
 ## Privacy and safety
 
 Search fields are sent to the operator's MCP server and to Yahoo! Shopping.
-The server stores only safety-filtered Yahoo response data in a short-lived
-cache and global rate-limit state in local storage. It does not provide user
-accounts or persist full chat history.
+With memory disabled, the server stores only safety-filtered Yahoo response
+data in a short-lived cache and global rate-limit state in local storage. A
+single-user operator may explicitly enable typed preference memory in Neo4j;
+it still does not provide user accounts or persist full chat history.
 
 Do not send secrets, payment data, passwords, government identifiers, or
 sensitive personal data as search terms. Public operators must publish privacy,
